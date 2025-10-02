@@ -31,27 +31,25 @@ The project is a work in progress: star it, create issues, features or pull requ
 
 ## Quick Start with Docker
 
-[![dockeri.co](https://dockerico.blankenship.io/image/avoylenko/wwebjs-api)](https://hub.docker.com/r/avoylenko/wwebjs-api)
-
-1. Clone the repository:
+1. Copy the environment file:
 
 ```bash
-git clone https://github.com/avoylenko/wwebjs-api.git
-cd wwebjs-api
+cp .env.example .env
 ```
 
-3. Run the Docker Compose:
+2. Run the Docker Compose:
 
 ```bash
-docker-compose pull && docker-compose up
+docker-compose up -d --build
 ```
-4. Visit http://localhost:3000/session/start/ABCD
 
-5. Scan the QR on your console using WhatsApp mobile app -> Linked Device -> Link a Device (it may take time to setup the session)
+3. Visit http://localhost:21475/session/start/ABCD
 
-6. Visit http://localhost:3000/client/getContacts/ABCD
+4. Scan the QR on your console using WhatsApp mobile app -> Linked Device -> Link a Device (it may take time to setup the session)
 
-7. EXTRA: Look at all the callbacks data in `./session/message_log.txt`
+5. Visit http://localhost:21475/client/getContacts/ABCD
+
+6. EXTRA: Look at all the callbacks data in `./session/message_log.txt`
 
 ![Quick Start](./assets/basic_start.gif)
 
@@ -102,7 +100,7 @@ docker-compose pull && docker-compose up
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/avoylenko/wwebjs-api.git
+git clone https://github.com/your-username/wwebjs-api.git
 cd wwebjs-api
 ```
 
@@ -136,7 +134,7 @@ npm run test
 
 ## Documentation
 
-API documentation can be found in the [`swagger.json`](https://raw.githubusercontent.com/avoylenko/wwebjs-api/main/swagger.json) file. See this file directly into [Swagger Editor](https://editor.swagger.io/?url=https://raw.githubusercontent.com/avoylenko/wwebjs-api/main/swagger.json) or any other OpenAPI-compatible tool to view and interact with the API documentation.
+API documentation can be found in the [`swagger.json`](swagger.json) file. You can view it in [Swagger Editor](https://editor.swagger.io/) or any other OpenAPI-compatible tool to view and interact with the API documentation.
 
 This documentation is straightforward if you are familiar with whatsapp-web.js library (https://docs.wwebjs.dev/)
 If you are still confused - open an issue and I'll improve it.
@@ -187,4 +185,3 @@ This project is licensed under the MIT License - see the [LICENSE.md](./LICENSE.
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=avoylenko/wwebjs-api&type=Date)](https://star-history.com/#avoylenko/wwebjs-api&Date)
