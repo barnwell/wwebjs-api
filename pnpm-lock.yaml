@@ -23,6 +23,9 @@ importers:
       pino:
         specifier: ^9.9.4
         version: 9.13.0
+      puppeteer:
+        specifier: ^18.2.1
+        version: 18.2.1
       qr-image:
         specifier: ^3.2.0
         version: 3.2.0
@@ -3929,7 +3932,7 @@ snapshots:
 
   extract-zip@2.0.1:
     dependencies:
-      debug: 4.3.4
+      debug: 4.4.3
       get-stream: 5.2.0
       yauzl: 2.10.0
     optionalDependencies:
