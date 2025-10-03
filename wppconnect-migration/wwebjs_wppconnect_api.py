@@ -373,8 +373,37 @@ class WPPConnectAPI:
     def status(self) -> dict:
         """GET /session/status/{sessionId}"""
         result = self.send_rest_request(f"session/status/{self.session}", method="GET")
-        if result.get("success"):
-            result["status"] = result.get("state", "UNKNOWN").upper()
+        
+        # Normalize WWebJS response to WPPConnect format
+        # WWebJS returns: {"success": true/false, "state": "CONNECTED"|null, "message": "session_connected"|"session_not_connected"|...}
+        # WPPConnect expects: {"status": "CONNECTED"|"QRCODE"|"DISCONNECTED"|"", ...}
+        
+        # Map WWebJS messages to status values
+        message = result.get("message", "")
+        state = result.get("state")
+        
+        if message == "session_not_found":
+            # Session doesn't exist - set empty status to trigger creation
+            result["status"] = ""
+        elif message in ["browser tab closed", "session closed"]:
+            # Session is closed/dead - set empty status to trigger recreation
+            result["status"] = ""
+        elif message == "session_not_connected":
+            # Session exists but not connected - use the state value (QRCODE, DISCONNECTED, etc.)
+            result["status"] = state if state else "DISCONNECTED"
+        elif message == "session_connected":
+            # Session is connected
+            result["status"] = "CONNECTED"
+        elif "state" in result and state:
+            # Fallback: use state if available
+            result["status"] = state
+        elif "error" in result and not result.get("ok"):
+            # Handle error cases - set empty status so register_session can handle it
+            result["status"] = ""
+        else:
+            # Unknown state - set empty to be safe
+            result["status"] = ""
+        
         return result
 
     def show_all_sessions(self) -> dict:
