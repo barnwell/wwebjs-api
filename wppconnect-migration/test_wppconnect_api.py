@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 import requests
 
-from wppconnect_api import WPPConnectAPI
+from wwebjs_wppconnect_wrapper import WPPConnectAPI
 
 
 class TestWPPConnectAPIInit:

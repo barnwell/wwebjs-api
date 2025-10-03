@@ -698,38 +698,76 @@ class WPPConnectAPI:
         return self.send_rest_request(f"client/createGroup/{self.session}", data=data)
 
     def group_members(self, group_id: str) -> dict:
-        """TODO: Get group members - need to find WWebJS equivalent"""
+        """POST /group/getParticipants/{sessionId}"""
         if not group_id:
             return {}
-        return {"ok": False, "error": "group_members not yet implemented for WWebJS"}
+        group_chat_id = self._format_chat_id(group_id, True)
+        data = {"groupId": group_chat_id}
+        return self.send_rest_request(f"group/getParticipants/{self.session}", data=data)
 
     def leave_group(self, group_id: str) -> dict:
-        """TODO: Leave group - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "leave_group not yet implemented for WWebJS"}
+        """POST /group/leaveGroup/{sessionId}"""
+        group_chat_id = self._format_chat_id(group_id, True)
+        data = {"groupId": group_chat_id}
+        return self.send_rest_request(f"group/leaveGroup/{self.session}", data=data)
 
     def add_group_participant(self, group_id: str, phone: str) -> dict:
-        """TODO: Add participant - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "add_group_participant not yet implemented for WWebJS"}
+        """POST /group/addParticipant/{sessionId}"""
+        group_chat_id = self._format_chat_id(group_id, True)
+        participant_id = self._format_chat_id(phone, False)
+        data = {
+            "groupId": group_chat_id,
+            "participantId": participant_id
+        }
+        return self.send_rest_request(f"group/addParticipant/{self.session}", data=data)
 
     def remove_group_participant(self, group_id: str, phone: str) -> dict:
-        """TODO: Remove participant - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "remove_group_participant not yet implemented for WWebJS"}
+        """POST /group/removeParticipant/{sessionId}"""
+        group_chat_id = self._format_chat_id(group_id, True)
+        participant_id = self._format_chat_id(phone, False)
+        data = {
+            "groupId": group_chat_id,
+            "participantId": participant_id
+        }
+        return self.send_rest_request(f"group/removeParticipant/{self.session}", data=data)
 
     def promote_group_admin(self, group_id: str, phone: str) -> dict:
-        """TODO: Promote admin - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "promote_group_admin not yet implemented for WWebJS"}
+        """POST /group/promoteParticipant/{sessionId}"""
+        group_chat_id = self._format_chat_id(group_id, True)
+        participant_id = self._format_chat_id(phone, False)
+        data = {
+            "groupId": group_chat_id,
+            "participantId": participant_id
+        }
+        return self.send_rest_request(f"group/promoteParticipant/{self.session}", data=data)
 
     def demote_group_admin(self, group_id: str, phone: str) -> dict:
-        """TODO: Demote admin - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "demote_group_admin not yet implemented for WWebJS"}
+        """POST /group/demoteParticipant/{sessionId}"""
+        group_chat_id = self._format_chat_id(group_id, True)
+        participant_id = self._format_chat_id(phone, False)
+        data = {
+            "groupId": group_chat_id,
+            "participantId": participant_id
+        }
+        return self.send_rest_request(f"group/demoteParticipant/{self.session}", data=data)
 
     def set_group_subject(self, group_id: str, title: str) -> dict:
-        """TODO: Set group subject - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "set_group_subject not yet implemented for WWebJS"}
+        """POST /group/setSubject/{sessionId}"""
+        group_chat_id = self._format_chat_id(group_id, True)
+        data = {
+            "groupId": group_chat_id,
+            "title": title
+        }
+        return self.send_rest_request(f"group/setSubject/{self.session}", data=data)
 
     def set_group_description(self, group_id: str, description: str) -> dict:
-        """TODO: Set group description - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "set_group_description not yet implemented for WWebJS"}
+        """POST /group/setDescription/{sessionId}"""
+        group_chat_id = self._format_chat_id(group_id, True)
+        data = {
+            "groupId": group_chat_id,
+            "description": description
+        }
+        return self.send_rest_request(f"group/setDescription/{self.session}", data=data)
 
     # 4. Contacts
 
@@ -744,12 +782,16 @@ class WPPConnectAPI:
         return self.send_rest_request(f"client/getContactById/{self.session}", data=data)
 
     def block_contact(self, phone: str, is_group: bool = False) -> dict:
-        """TODO: Block contact - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "block_contact not yet implemented for WWebJS"}
+        """POST /contact/block/{sessionId}"""
+        contact_id = self._format_chat_id(phone, is_group)
+        data = {"contactId": contact_id}
+        return self.send_rest_request(f"contact/block/{self.session}", data=data)
 
     def unblock_contact(self, phone: str, is_group: bool = False) -> dict:
-        """TODO: Unblock contact - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "unblock_contact not yet implemented for WWebJS"}
+        """POST /contact/unblock/{sessionId}"""
+        contact_id = self._format_chat_id(phone, is_group)
+        data = {"contactId": contact_id}
+        return self.send_rest_request(f"contact/unblock/{self.session}", data=data)
 
     def get_blocklist(self) -> dict:
         """POST /client/getBlockedContacts/{sessionId}"""
@@ -769,8 +811,10 @@ class WPPConnectAPI:
         return self.send_rest_request(f"client/getChatById/{self.session}", data=data)
 
     def clear_chat(self, phone: str, is_group: bool = False) -> dict:
-        """TODO: Clear chat - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "clear_chat not yet implemented for WWebJS"}
+        """POST /chat/clearMessages/{sessionId}"""
+        chat_id = self._format_chat_id(phone, is_group)
+        data = {"chatId": chat_id}
+        return self.send_rest_request(f"chat/clearMessages/{self.session}", data=data)
 
     def archive_chat(self, phone: str, is_group: bool = False) -> dict:
         """POST /client/archiveChat/{sessionId}"""
@@ -785,22 +829,28 @@ class WPPConnectAPI:
     def set_typing_status(
         self, phone: str, is_group: bool = False, value: bool = True
     ) -> dict:
-        """TODO: Set typing status - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "set_typing_status not yet implemented for WWebJS"}
+        """POST /chat/sendStateTyping/{sessionId}"""
+        chat_id = self._format_chat_id(phone, is_group)
+        data = {"chatId": chat_id}
+        # Note: WWebJS typing lasts for 25 seconds, value parameter is ignored
+        return self.send_rest_request(f"chat/sendStateTyping/{self.session}", data=data)
 
     def set_recording_status(
         self, phone: str, is_group: bool = False, duration: int = 5, value: bool = True
     ) -> dict:
-        """TODO: Set recording status - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "set_recording_status not yet implemented for WWebJS"}
+        """POST /chat/sendStateRecording/{sessionId}"""
+        chat_id = self._format_chat_id(phone, is_group)
+        data = {"chatId": chat_id}
+        # Note: WWebJS recording lasts for 25 seconds, duration and value parameters are ignored
+        return self.send_rest_request(f"chat/sendStateRecording/{self.session}", data=data)
 
     # 6. Media (Download/Upload helpers) - already implemented as static methods
 
     # 7. Utility & info
 
     def device_battery(self) -> dict:
-        """TODO: Device battery - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "device_battery not yet implemented for WWebJS"}
+        """GET /device/getBatteryLevel/{sessionId}"""
+        return self.send_rest_request(f"device/getBatteryLevel/{self.session}", method="GET")
 
     def mark_unread(self, chatid: str) -> dict:
         """POST /client/markChatUnread/{sessionId}"""
@@ -808,8 +858,9 @@ class WPPConnectAPI:
         return self.send_rest_request(f"client/markChatUnread/{self.session}", data=data)
 
     def read_chat(self, chatid: str) -> dict:
-        """TODO: Mark chat as read - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "read_chat not yet implemented for WWebJS"}
+        """POST /chat/sendSeen/{sessionId}"""
+        data = {"chatId": chatid}
+        return self.send_rest_request(f"chat/sendSeen/{self.session}", data=data)
 
     def get_profile_picture(self, phone: str) -> dict:
         """POST /client/getProfilePicUrl/{sessionId}"""
@@ -818,14 +869,20 @@ class WPPConnectAPI:
         return self.send_rest_request(f"client/getProfilePicUrl/{self.session}", data=data)
 
     def get_message_by_id(self, message_id: str) -> dict:
-        """TODO: Get message by ID - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "get_message_by_id not yet implemented for WWebJS"}
+        """POST /message/getMessageById/{sessionId}"""
+        data = {"messageId": message_id}
+        return self.send_rest_request(f"message/getMessageById/{self.session}", data=data)
 
     def forward_messages(
         self, phone: str, message_ids: list, is_group: bool = False
     ) -> dict:
-        """TODO: Forward messages - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "forward_messages not yet implemented for WWebJS"}
+        """POST /message/forward/{sessionId}"""
+        chat_id = self._format_chat_id(phone, is_group)
+        data = {
+            "chatId": chat_id,
+            "messageIds": message_ids
+        }
+        return self.send_rest_request(f"message/forward/{self.session}", data=data)
 
     def delete_message(
         self,
@@ -835,8 +892,15 @@ class WPPConnectAPI:
         only_local: bool = False,
         delete_media_in_device: bool = False,
     ) -> dict:
-        """TODO: Delete message - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "delete_message not yet implemented for WWebJS"}
+        """POST /message/delete/{sessionId}"""
+        chat_id = self._format_chat_id(phone, is_group)
+        data = {
+            "chatId": chat_id,
+            "messageId": message_id,
+            "onlyLocal": only_local
+            # Note: delete_media_in_device parameter not supported in WWebJS
+        }
+        return self.send_rest_request(f"message/delete/{self.session}", data=data)
 
     # Profile
 
@@ -846,8 +910,9 @@ class WPPConnectAPI:
         return self.send_rest_request(f"client/setDisplayName/{self.session}", data=data)
 
     def set_profile_status(self, status: str) -> dict:
-        """TODO: Set profile status - need to find WWebJS equivalent"""
-        return {"ok": False, "error": "set_profile_status not yet implemented for WWebJS"}
+        """POST /client/setStatus/{sessionId}"""
+        data = {"status": status}
+        return self.send_rest_request(f"client/setStatus/{self.session}", data=data)
 
     def set_profile_pic(self, file_data: bytes) -> dict:
         """POST /client/setProfilePicture/{sessionId}"""
