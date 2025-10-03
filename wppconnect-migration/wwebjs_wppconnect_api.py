@@ -1031,3 +1031,130 @@ class WPPConnectAPI:
     def get_metrics(self) -> dict:
         """Not supported in WWebJS"""
         return {"ok": False, "error": "get_metrics not supported in WWebJS"}
+
+    @classmethod
+    def translate_wwebjs_to_wppconnect(wwebjs_data):
+        """
+        Translates message data from WWEBJS format to WPPConnect format.
+
+        Args:
+            wwebjs_data (dict): Message data in WWEBJS format
+
+        Returns:
+            dict: Message data in WPPConnect format
+        """
+        # Extract the message data from WWEBJS structure
+        message = wwebjs_data.get('data', {}).get('message', {})
+        msg_data = message.get('_data', {})
+        msg_id = msg_data.get('id', {})
+
+        # Build WPPConnect format
+        wppconnect_data = {
+            # WPPConnect specific fields
+            "event": "onmessage",
+            "session": wwebjs_data.get('sessionId', 'Dispatcher'),
+
+            # ID fields
+            "id": msg_id.get('_serialized', ''),
+
+            # Message content fields - from _data
+            "viewed": msg_data.get('viewed', False),
+            "body": msg_data.get('body', ''),
+            "type": msg_data.get('type', 'chat'),
+            "t": msg_data.get('t', 0),
+            "notifyName": msg_data.get('notifyName', ''),
+            "from": msg_data.get('from', ''),
+            "to": msg_data.get('to', ''),
+            "ack": msg_data.get('ack', 0),
+            "invis": msg_data.get('invis', False),
+            "isNewMsg": msg_data.get('isNewMsg', True),
+            "star": msg_data.get('star', False),
+            "kicNotified": msg_data.get('kicNotified', False),
+            "recvFresh": msg_data.get('recvFresh', True),
+            "isFromTemplate": msg_data.get('isFromTemplate', False),
+            "pollInvalidated": msg_data.get('pollInvalidated', False),
+            "isSentCagPollCreation": msg_data.get('isSentCagPollCreation', False),
+            "latestEditMsgKey": msg_data.get('latestEditMsgKey'),
+            "latestEditSenderTimestampMs": msg_data.get('latestEditSenderTimestampMs'),
+            "mentionedJidList": msg_data.get('mentionedJidList', []),
+            "groupMentions": msg_data.get('groupMentions', []),
+            "isEventCanceled": msg_data.get('isEventCanceled', False),
+            "eventInvalidated": msg_data.get('eventInvalidated', False),
+            "isVcardOverMmsDocument": msg_data.get('isVcardOverMmsDocument', False),
+            "isForwarded": msg_data.get('isForwarded', False),
+            "isQuestion": msg_data.get('isQuestion', False),
+            "hasReaction": msg_data.get('hasReaction', False),
+            "viewMode": msg_data.get('viewMode', 'VISIBLE'),
+            "messageSecret": msg_data.get('messageSecret', {}),
+            "productHeaderImageRejected": msg_data.get('productHeaderImageRejected', False),
+            "lastPlaybackProgress": msg_data.get('lastPlaybackProgress', 0),
+            "isDynamicReplyButtonsMsg": msg_data.get('isDynamicReplyButtonsMsg', False),
+            "isCarouselCard": msg_data.get('isCarouselCard', False),
+            "parentMsgId": msg_data.get('parentMsgId'),
+            "callSilenceReason": msg_data.get('callSilenceReason'),
+            "isVideoCall": msg_data.get('isVideoCall', False),
+            "callDuration": msg_data.get('callDuration'),
+            "callCreator": msg_data.get('callCreator'),
+            "callParticipants": msg_data.get('callParticipants'),
+            "isCallLink": msg_data.get('isCallLink'),
+            "callLinkToken": msg_data.get('callLinkToken'),
+            "isMdHistoryMsg": msg_data.get('isMdHistoryMsg', False),
+            "stickerSentTs": msg_data.get('stickerSentTs', 0),
+            "isAvatar": msg_data.get('isAvatar', False),
+            "lastUpdateFromServerTs": msg_data.get('lastUpdateFromServerTs', 0),
+            "invokedBotWid": msg_data.get('invokedBotWid'),
+            "bizBotType": msg_data.get('bizBotType'),
+            "botResponseTargetId": msg_data.get('botResponseTargetId'),
+            "botPluginType": msg_data.get('botPluginType'),
+            "botPluginReferenceIndex": msg_data.get('botPluginReferenceIndex'),
+            "botPluginSearchProvider": msg_data.get('botPluginSearchProvider'),
+            "botPluginSearchUrl": msg_data.get('botPluginSearchUrl'),
+            "botPluginSearchQuery": msg_data.get('botPluginSearchQuery'),
+            "botPluginMaybeParent": msg_data.get('botPluginMaybeParent', False),
+            "botReelPluginThumbnailCdnUrl": msg_data.get('botReelPluginThumbnailCdnUrl'),
+            "botMessageDisclaimerText": msg_data.get('botMessageDisclaimerText'),
+            "botMsgBodyType": msg_data.get('botMsgBodyType'),
+            "reportingTokenInfo": msg_data.get('reportingTokenInfo', {}),
+            "requiresDirectConnection": msg_data.get('requiresDirectConnection'),
+            "bizContentPlaceholderType": msg_data.get('bizContentPlaceholderType'),
+            "hostedBizEncStateMismatch": msg_data.get('hostedBizEncStateMismatch', False),
+            "senderOrRecipientAccountTypeHosted": msg_data.get('senderOrRecipientAccountTypeHosted', False),
+            "placeholderCreatedWhenAccountIsHosted": msg_data.get('placeholderCreatedWhenAccountIsHosted', False),
+
+            # WPPConnect specific fields from message level
+            "chatId": msg_data.get('from', ''),
+            "fromMe": msg_id.get('fromMe', False),
+            "timestamp": msg_data.get('t', 0),
+            "content": msg_data.get('body', ''),
+            "isGroupMsg": '@g.us' in msg_data.get('from', ''),
+            "mediaData": {}
+        }
+
+        # Build sender object for WPPConnect
+        sender_id = msg_data.get('from', '')
+        wppconnect_data["sender"] = {
+            "id": sender_id,
+            "name": msg_data.get('notifyName', ''),
+            "shortName": msg_data.get('notifyName', ''),
+            "pushname": msg_data.get('notifyName', ''),
+            "type": "in",
+            "isBusiness": False,
+            "isEnterprise": False,
+            "isSmb": False,
+            "isContactSyncCompleted": 0,
+            "textStatusLastUpdateTime": -1,
+            "syncToAddressbook": True,
+            "formattedName": msg_data.get('notifyName', ''),
+            "isMe": False,
+            "isMyContact": True,
+            "isPSA": False,
+            "isUser": True,
+            "isWAContact": True,
+            "profilePicThumbObj": {
+                "id": sender_id,
+                "tag": ""
+            },
+            "msgs": None
+        }
+
+        return wppconnect_data
