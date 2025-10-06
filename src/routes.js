@@ -38,6 +38,7 @@ sessionRouter.use(middleware.sessionSwagger)
 routes.use('/session', sessionRouter)
 
 sessionRouter.get('/getSessions', sessionController.getSessions)
+sessionRouter.post('/start/:sessionId', middleware.sessionNameValidation, sessionController.startSession)
 sessionRouter.get('/start/:sessionId', middleware.sessionNameValidation, sessionController.startSession)
 sessionRouter.get('/stop/:sessionId', middleware.sessionNameValidation, sessionController.stopSession)
 sessionRouter.get('/status/:sessionId', middleware.sessionNameValidation, sessionController.statusSession)

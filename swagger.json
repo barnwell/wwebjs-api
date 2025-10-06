@@ -153,12 +153,96 @@
       }
     },
     "/session/start/{sessionId}": {
+      "post": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "Start new session with optional webhook URL",
+        "description": "Starts a session for the given session ID. Can include an optional custom webhook URL for this session.",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique identifier for the session (alphanumeric and - allowed)",
+            "example": "f8377d8d-a589-4242-9ba6-9486a04ef80c"
+          }
+        ],
+        "requestBody": {
+          "description": "Session configuration with optional webhook URL",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "webhookUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Custom webhook URL for this session (overrides BASE_WEBHOOK_URL)",
+                    "example": "https://your-endpoint.com/webhooks/whatsapp"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status of the initiated session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartSessionResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          { 
+            "apiKeyAuth": []
+          }
+        ]
+      },
       "get": {
         "tags": [
           "Session"
         ],
         "summary": "Start new session",
-        "description": "Starts a session for the given session ID.",
+        "description": "Starts a session for the given session ID using global webhook URL.",
         "parameters": [
           {
             "name": "sessionId",

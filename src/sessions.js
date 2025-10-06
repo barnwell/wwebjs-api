@@ -2,6 +2,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js')
 const fs = require('fs')
 const path = require('path')
 const sessions = new Map()
+const sessionWebhookUrls = new Map()
 const { baseWebhookURL, sessionFolderPath, maxAttachmentSize, setMessagesAsSeen, webVersion, webVersionCacheType, recoverSessions, chromeBin, headless, releaseBrowserLock } = require('./config')
 const { triggerWebhook, waitForNestedObject, isEventEnabled, sendMessageSeenStatus, sleep, patchWWebLibrary } = require('./utils')
 const { logger } = require('./logger')
@@ -85,7 +86,7 @@ const restoreSessions = () => {
 }
 
 // Setup Session
-const setupSession = async (sessionId) => {
+const setupSession = async (sessionId, customWebhookUrl = null) => {
   try {
     if (sessions.has(sessionId)) {
       return { success: false, message: `Session already exists for: ${sessionId}`, client: sessions.get(sessionId) }
@@ -190,6 +191,12 @@ const setupSession = async (sessionId) => {
       throw error
     }
 
+    // Store custom webhook URL if provided
+    if (customWebhookUrl) {
+      sessionWebhookUrls.set(sessionId, customWebhookUrl)
+      logger.info({ sessionId, webhookUrl: customWebhookUrl }, 'Custom webhook URL set for session')
+    }
+
     // Save the session to the Map
     sessions.set(sessionId, client)
     return { success: true, message: 'Session initiated successfully', client }
@@ -199,8 +206,9 @@ const setupSession = async (sessionId) => {
 }
 
 const initializeEvents = (client, sessionId) => {
-  // check if the session webhook is overridden
-  const sessionWebhook = process.env[sessionId.toUpperCase() + '_WEBHOOK_URL'] || baseWebhookURL
+  // check if the session webhook is overridden (custom webhook URL takes priority)
+  const customWebhookUrl = sessionWebhookUrls.get(sessionId)
+  const sessionWebhook = customWebhookUrl || process.env[sessionId.toUpperCase() + '_WEBHOOK_URL'] || baseWebhookURL
 
   if (recoverSessions) {
     waitForNestedObject(client, 'pupPage').then(() => {
@@ -524,6 +532,8 @@ const destroySession = async (sessionId) => {
       maxDelay++
     }
     sessions.delete(sessionId)
+    // Clean up session webhook URL
+    sessionWebhookUrls.delete(sessionId)
   } catch (error) {
     logger.error({ sessionId, err: error }, 'Failed to stop session')
     throw error
@@ -559,6 +569,8 @@ const deleteSession = async (sessionId, validation) => {
       maxDelay++
     }
     sessions.delete(sessionId)
+    // Clean up session webhook URL
+    sessionWebhookUrls.delete(sessionId)
     await deleteSessionFolder(sessionId)
   } catch (error) {
     logger.error({ sessionId, err: error }, 'Failed to delete session')

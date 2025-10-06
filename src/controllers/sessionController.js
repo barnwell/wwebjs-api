@@ -18,8 +18,19 @@ const startSession = async (req, res) => {
   // #swagger.summary = 'Start new session'
   // #swagger.description = 'Starts a session for the given session ID.'
   const sessionId = req.params.sessionId
+  const webhookUrl = req.body?.webhookUrl
+  
+  // Validate webhook URL if provided
+  if (webhookUrl) {
+    try {
+      new URL(webhookUrl)
+    } catch (error) {
+      return sendErrorResponse(res, 400, 'Invalid webhook URL format')
+    }
+  }
+  
   try {
-    const setupSessionReturn = await setupSession(sessionId)
+    const setupSessionReturn = await setupSession(sessionId, webhookUrl)
     if (!setupSessionReturn.success) {
       /* #swagger.responses[422] = {
         description: "Unprocessable Entity.",

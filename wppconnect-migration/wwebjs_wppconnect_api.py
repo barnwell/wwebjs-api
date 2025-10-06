@@ -3,6 +3,11 @@ WWebJS API Wrapper with WPPConnect-compatible interface.
 
 This module provides a drop-in replacement for WPPConnectAPI that works with WWebJS backend.
 All method signatures remain the same for compatibility with existing code.
+
+New Features:
+- Custom webhook URL support per session via register_session(webhook_url=...)
+- Session creation with webhook URLs via start_session() and create_session()
+- Dynamic webhook configuration without environment variable changes
 """
 
 import base64
@@ -314,8 +319,8 @@ class WPPConnectAPI:
         auto_register: bool = True,
     ) -> dict:
         """
-        Initializes the WWebJS session.
-        Note: WWebJS doesn't support webhook registration in start endpoint.
+        Initializes the WWebJS session with optional custom webhook URL.
+        If webhook_url is provided, it will be set for this specific session.
         """
         status_resp = self.status()
         # Check both 'state' (WWebJS) and 'status' (for test compatibility)
@@ -324,7 +329,7 @@ class WPPConnectAPI:
         # Check for unauthorized/error - try to create session (regardless of auto_register)
         # This matches WPPConnect behavior where create_session is called for auth errors
         if "error" in status_resp or "Unauthorized" in str(status_resp.get("error", "")):
-            create_res = self.create_session()
+            create_res = self.create_session(webhook=webhook_url)
             if not create_res.get("token") and not create_res.get("ok"):
                 return {
                     "status": "ERROR",
@@ -349,7 +354,7 @@ class WPPConnectAPI:
                 "token": self.token,
             }
         elif state in {"QRCODE", "DISCONNECTED", "UNPAIRED", ""} and auto_register:
-            start_res = self.start_session()
+            start_res = self.start_session(webhook=webhook_url)
 
             qr_resp = self.qrcode()
             qrcode_b64 = qr_resp.get("qrcode_base64") or qr_resp.get("qr") or qr_resp.get("qrcode")
@@ -415,9 +420,14 @@ class WPPConnectAPI:
         return self.send_rest_request(f"client/getState/{self.session}", method="GET")
 
     def start_session(self, webhook: str = "", wait_qr_code: bool = False) -> dict:
-        """GET /session/start/{sessionId}"""
-        # Note: WWebJS doesn't support webhook parameter in start endpoint
-        return self.send_rest_request(f"session/start/{self.session}", method="GET")
+        """POST /session/start/{sessionId} with optional webhook URL"""
+        if webhook:
+            # Use POST with webhook URL in body
+            data = {"webhookUrl": webhook}
+            return self.send_rest_request(f"session/start/{self.session}", method="POST", data=data)
+        else:
+            # Use GET for backwards compatibility
+            return self.send_rest_request(f"session/start/{self.session}", method="GET")
 
     def close_session(self) -> dict:
         """GET /session/stop/{sessionId}"""
@@ -452,14 +462,20 @@ class WPPConnectAPI:
         """Not directly supported in WWebJS"""
         return {"ok": False, "error": "profile_exists not supported in WWebJS"}
 
-    def create_session(self) -> dict:
-        """GET /session/start/{sessionId} - Start/create session in WWebJS"""
+    def create_session(self, webhook: str = "") -> dict:
+        """POST /session/start/{sessionId} with optional webhook URL - Start/create session in WWebJS"""
         if not self.secret_key:
             # For compatibility with WPPConnect tests
             return {"ok": False, "error": "secret_key required"}
         
         # In WWebJS, starting a session is equivalent to creating it
-        result = self.send_rest_request(f"session/start/{self.session}", method="GET")
+        if webhook:
+            # Use POST with webhook URL in body
+            data = {"webhookUrl": webhook}
+            result = self.send_rest_request(f"session/start/{self.session}", method="POST", data=data)
+        else:
+            # Use GET for backwards compatibility
+            result = self.send_rest_request(f"session/start/{self.session}" , method="GET")
         
         # Add token to response for compatibility
         if result.get("ok") or result.get("success"):
