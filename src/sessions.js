@@ -8,6 +8,44 @@ const { triggerWebhook, waitForNestedObject, isEventEnabled, sendMessageSeenStat
 const { logger } = require('./logger')
 const { initWebSocketServer, terminateWebSocketServer, triggerWebSocket } = require('./websocket')
 
+// Webhook URLs persistence
+const webhookUrlsFilePath = path.join(sessionFolderPath, 'webhook-urls.json')
+
+// Load webhook URLs from disk
+const loadWebhookUrls = () => {
+  try {
+    logger.info({ webhookUrlsFilePath }, 'Attempting to load webhook URLs from disk')
+    if (fs.existsSync(webhookUrlsFilePath)) {
+      const data = fs.readFileSync(webhookUrlsFilePath, 'utf8')
+      const webhookUrls = JSON.parse(data)
+      logger.info({ webhookUrls }, 'Raw webhook URLs data from disk')
+      for (const [sessionId, webhookUrl] of Object.entries(webhookUrls)) {
+        sessionWebhookUrls.set(sessionId, webhookUrl)
+        logger.info({ sessionId, webhookUrl }, 'Loaded webhook URL for session')
+      }
+      logger.info({ loadedCount: Object.keys(webhookUrls).length }, 'Loaded webhook URLs from disk')
+    } else {
+      logger.info({ webhookUrlsFilePath }, 'Webhook URLs file does not exist yet')
+    }
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to load webhook URLs from disk')
+  }
+}
+
+// Save webhook URLs to disk
+const saveWebhookUrls = () => {
+  try {
+    const webhookUrls = Object.fromEntries(sessionWebhookUrls)
+    fs.writeFileSync(webhookUrlsFilePath, JSON.stringify(webhookUrls, null, 2))
+    logger.debug({ savedCount: Object.keys(webhookUrls).length }, 'Saved webhook URLs to disk')
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to save webhook URLs to disk')
+  }
+}
+
+// Load webhook URLs on startup
+loadWebhookUrls()
+
 // Function to validate if the session is ready
 const validateSession = async (sessionId) => {
   try {
@@ -64,6 +102,7 @@ const validateSession = async (sessionId) => {
 // Function to handle client session restoration
 const restoreSessions = () => {
   try {
+    logger.info({ sessionWebhookUrls: Object.fromEntries(sessionWebhookUrls) }, 'Current webhook URLs in memory before restoring sessions')
     if (!fs.existsSync(sessionFolderPath)) {
       fs.mkdirSync(sessionFolderPath) // Create the session directory if it doesn't exist
     }
@@ -76,7 +115,10 @@ const restoreSessions = () => {
         if (match) {
           const sessionId = match[1]
           logger.warn({ sessionId }, 'Existing session detected')
-          await setupSession(sessionId)
+          // Check if there's a custom webhook URL for this session
+          const customWebhookUrl = sessionWebhookUrls.get(sessionId)
+          logger.info({ sessionId, customWebhookUrl, hasCustomWebhook: !!customWebhookUrl }, 'Restoring session with webhook URL')
+          await setupSession(sessionId, customWebhookUrl)
         }
       }
     })
@@ -177,6 +219,18 @@ const setupSession = async (sessionId, customWebhookUrl = null) => {
       }
     }
 
+    // Store custom webhook URL if provided (BEFORE initializing events)
+    if (customWebhookUrl) {
+      sessionWebhookUrls.set(sessionId, customWebhookUrl)
+      saveWebhookUrls() // Save to disk immediately
+      logger.info({ sessionId, webhookUrl: customWebhookUrl }, 'Custom webhook URL set for session')
+      // Verify it was stored correctly
+      const storedWebhook = sessionWebhookUrls.get(sessionId)
+      logger.info({ sessionId, storedWebhook }, 'Verification: Custom webhook URL stored in Map')
+    } else {
+      logger.info({ sessionId }, 'No custom webhook URL provided, using default webhook configuration')
+    }
+
     try {
       client.once('ready', () => {
         patchWWebLibrary(client).catch((err) => {
@@ -191,12 +245,6 @@ const setupSession = async (sessionId, customWebhookUrl = null) => {
       throw error
     }
 
-    // Store custom webhook URL if provided
-    if (customWebhookUrl) {
-      sessionWebhookUrls.set(sessionId, customWebhookUrl)
-      logger.info({ sessionId, webhookUrl: customWebhookUrl }, 'Custom webhook URL set for session')
-    }
-
     // Save the session to the Map
     sessions.set(sessionId, client)
     return { success: true, message: 'Session initiated successfully', client }
@@ -209,13 +257,32 @@ const initializeEvents = (client, sessionId) => {
   // check if the session webhook is overridden (custom webhook URL takes priority)
   const customWebhookUrl = sessionWebhookUrls.get(sessionId)
   const sessionWebhook = customWebhookUrl || process.env[sessionId.toUpperCase() + '_WEBHOOK_URL'] || baseWebhookURL
+  
+  logger.info({ 
+    sessionId, 
+    customWebhookUrl, 
+    envWebhookUrl: process.env[sessionId.toUpperCase() + '_WEBHOOK_URL'],
+    baseWebhookURL,
+    finalWebhookUrl: sessionWebhook 
+  }, 'Webhook URL configuration for session')
 
   if (recoverSessions) {
     waitForNestedObject(client, 'pupPage').then(() => {
       const restartSession = async (sessionId) => {
+        logger.info({ sessionId }, 'Restarting session due to browser page close/error')
+        
+        // Remove all event listeners to prevent duplicate webhook calls
+        client.removeAllListeners()
+        client.pupPage?.removeAllListeners('close')
+        client.pupPage?.removeAllListeners('error')
+        
         sessions.delete(sessionId)
         await client.destroy().catch(e => { })
-        await setupSession(sessionId)
+        
+        // Preserve custom webhook URL when restarting session
+        const customWebhookUrl = sessionWebhookUrls.get(sessionId)
+        logger.info({ sessionId, customWebhookUrl }, 'Restarting session with preserved webhook URL')
+        await setupSession(sessionId, customWebhookUrl)
       }
       client.pupPage.once('close', function () {
         // emitted when the page closes
@@ -488,6 +555,8 @@ const reloadSession = async (sessionId) => {
     if (!client) {
       return
     }
+    // Remove all event listeners to prevent duplicate webhook calls
+    client.removeAllListeners()
     client.pupPage?.removeAllListeners('close')
     client.pupPage?.removeAllListeners('error')
     try {
@@ -504,7 +573,9 @@ const reloadSession = async (sessionId) => {
       }
     }
     sessions.delete(sessionId)
-    await setupSession(sessionId)
+    // Preserve custom webhook URL when reloading session
+    const customWebhookUrl = sessionWebhookUrls.get(sessionId)
+    await setupSession(sessionId, customWebhookUrl)
   } catch (error) {
     logger.error({ sessionId, err: error }, 'Failed to reload session')
     throw error
@@ -517,6 +588,8 @@ const destroySession = async (sessionId) => {
     if (!client) {
       return
     }
+    // Remove all event listeners to prevent duplicate webhook calls
+    client.removeAllListeners()
     client.pupPage?.removeAllListeners('close')
     client.pupPage?.removeAllListeners('error')
     try {
@@ -534,6 +607,7 @@ const destroySession = async (sessionId) => {
     sessions.delete(sessionId)
     // Clean up session webhook URL
     sessionWebhookUrls.delete(sessionId)
+    saveWebhookUrls() // Save updated webhook URLs to disk
   } catch (error) {
     logger.error({ sessionId, err: error }, 'Failed to stop session')
     throw error
@@ -571,6 +645,7 @@ const deleteSession = async (sessionId, validation) => {
     sessions.delete(sessionId)
     // Clean up session webhook URL
     sessionWebhookUrls.delete(sessionId)
+    saveWebhookUrls() // Save updated webhook URLs to disk
     await deleteSessionFolder(sessionId)
   } catch (error) {
     logger.error({ sessionId, err: error }, 'Failed to delete session')
@@ -603,6 +678,7 @@ const flushSessions = async (deleteOnlyInactive) => {
 
 module.exports = {
   sessions,
+  sessionWebhookUrls,
   setupSession,
   restoreSessions,
   validateSession,

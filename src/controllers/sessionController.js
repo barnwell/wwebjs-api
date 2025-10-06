@@ -1,5 +1,5 @@
 const qr = require('qr-image')
-const { setupSession, deleteSession, reloadSession, validateSession, flushSessions, destroySession, sessions } = require('../sessions')
+const { setupSession, deleteSession, reloadSession, validateSession, flushSessions, destroySession, sessions, sessionWebhookUrls } = require('../sessions')
 const { sendErrorResponse, waitForNestedObject, exposeFunctionIfAbsent } = require('../utils')
 const { logger } = require('../logger')
 
@@ -464,6 +464,44 @@ const getPageScreenshot = async (req, res) => {
   }
 }
 
+/**
+ * Get webhook URL debug information for a session
+ *
+ * @function
+ * @async
+ * @param {Object} req - The request object.
+ * @param {Object} res - The response object.
+ * @returns {Promise<Object>} - A Promise that resolves with webhook URL debug information.
+ */
+const getWebhookDebugInfo = async (req, res) => {
+  // #swagger.summary = 'Get webhook debug info'
+  // #swagger.description = 'Get webhook URL debug information for a session.'
+  const sessionId = req.params.sessionId
+  try {
+    const customWebhookUrl = sessionWebhookUrls.get(sessionId)
+    const envWebhookUrl = process.env[sessionId.toUpperCase() + '_WEBHOOK_URL']
+    const baseWebhookURL = process.env.BASE_WEBHOOK_URL
+    const finalWebhookUrl = customWebhookUrl || envWebhookUrl || baseWebhookURL
+
+    const debugInfo = {
+      sessionId,
+      customWebhookUrl,
+      envWebhookUrl,
+      baseWebhookURL,
+      finalWebhookUrl,
+      hasCustomWebhook: !!customWebhookUrl,
+      hasEnvWebhook: !!envWebhookUrl,
+      hasBaseWebhook: !!baseWebhookURL
+    }
+
+    logger.info(debugInfo, 'Webhook debug info requested')
+    res.json({ success: true, debugInfo })
+  } catch (error) {
+    logger.error({ sessionId, err: error }, 'Failed to get webhook debug info')
+    sendErrorResponse(res, 500, error.message)
+  }
+}
+
 module.exports = {
   startSession,
   stopSession,
@@ -476,5 +514,6 @@ module.exports = {
   terminateInactiveSessions,
   terminateAllSessions,
   getSessions,
-  getPageScreenshot
+  getPageScreenshot,
+  getWebhookDebugInfo
 }
