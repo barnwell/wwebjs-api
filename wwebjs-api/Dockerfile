@@ -29,7 +29,7 @@ RUN apt-get update && \
 COPY --from=deps /usr/src/app/node_modules ./node_modules
 
 # Copy application code
-COPY . .
+COPY .. .
 
 EXPOSE 3000
 

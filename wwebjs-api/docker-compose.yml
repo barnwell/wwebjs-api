@@ -5,7 +5,7 @@ name: wwebjs-api
 
 services:
   api:
-    build: .
+    build: ..
     container_name: wwebjs-api
     restart: always
     ports:
