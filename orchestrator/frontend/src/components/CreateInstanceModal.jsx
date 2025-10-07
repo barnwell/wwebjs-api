@@ -42,7 +42,7 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (!defaultConfig) {
+    if (isLoadingConfig) {
       toast.error('Default configuration not loaded yet. Please wait.')
       return
     }
@@ -54,6 +54,32 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
       ...prev,
       config: { ...prev.config, [key]: value }
     }))
+  }
+
+  const handleTemplateChange = (templateId) => {
+    setFormData(prev => ({
+      ...prev,
+      templateId
+    }))
+
+    // If a template is selected, merge its config with the current config
+    if (templateId) {
+      const selectedTemplate = templates.find(t => t.id === templateId)
+      if (selectedTemplate && selectedTemplate.config) {
+        setFormData(prev => ({
+          ...prev,
+          config: { ...prev.config, ...selectedTemplate.config }
+        }))
+      }
+    } else {
+      // If no template selected, reset to default config
+      if (defaultConfig) {
+        setFormData(prev => ({
+          ...prev,
+          config: { ...defaultConfig }
+        }))
+      }
+    }
   }
 
   return (
@@ -102,7 +128,7 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
             <label className="label">Template</label>
             <select
               value={formData.templateId}
-              onChange={(e) => setFormData({ ...formData, templateId: e.target.value })}
+              onChange={(e) => handleTemplateChange(e.target.value)}
               className="input w-full"
             >
               <option value="">No template</option>
@@ -112,10 +138,22 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
                 </option>
               ))}
             </select>
+            {formData.templateId && (
+              <p className="text-sm text-blue-600 mt-1">
+                ✓ Template selected - form fields updated with template values
+              </p>
+            )}
           </div>
 
           <div className="border-t pt-4">
-            <h3 className="font-medium mb-4">Configuration</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-medium">Configuration</h3>
+              {defaultConfig && (
+                <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+                  ✓ Default config loaded
+                </span>
+              )}
+            </div>
             
             <div className="space-y-6">
               {/* Core Configuration */}

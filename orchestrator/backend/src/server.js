@@ -3,7 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const dotenv = require('dotenv');
 const path = require('path');
-const { initDatabase } = require('./db');
+const { initDatabase, closeDatabase } = require('./db');
 const { initDocker } = require('./docker');
 const { initWebSocket } = require('./websocket');
 const metricsCollector = require('./services/metricsCollector');
@@ -78,6 +78,17 @@ async function start() {
     process.on('SIGTERM', () => {
       logger.info('SIGTERM received, shutting down gracefully');
       metricsCollector.stop();
+      closeDatabase();
+      server.close(() => {
+        logger.info('Server closed');
+        process.exit(0);
+      });
+    });
+
+    process.on('SIGINT', () => {
+      logger.info('SIGINT received, shutting down gracefully');
+      metricsCollector.stop();
+      closeDatabase();
       server.close(() => {
         logger.info('Server closed');
         process.exit(0);

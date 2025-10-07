@@ -8,10 +8,10 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const db = getDatabase();
-    const settings = db.prepare('SELECT * FROM settings').all();
+    const result = await db.query('SELECT * FROM settings');
     
     const settingsObj = {};
-    settings.forEach(setting => {
+    result.rows.forEach(setting => {
       settingsObj[setting.key] = setting.value;
     });
     
@@ -26,12 +26,13 @@ router.get('/', async (req, res) => {
 router.get('/:key', async (req, res) => {
   try {
     const db = getDatabase();
-    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
+    const result = await db.query('SELECT * FROM settings WHERE key = $1', [req.params.key]);
     
-    if (!setting) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Setting not found' });
     }
     
+    const setting = result.rows[0];
     res.json({ key: setting.key, value: setting.value });
   } catch (error) {
     logger.error('Error fetching setting:', error);
@@ -50,10 +51,13 @@ router.put('/:key', async (req, res) => {
     
     const db = getDatabase();
     
-    db.prepare(`
-      INSERT OR REPLACE INTO settings (key, value, updated_at)
-      VALUES (?, ?, CURRENT_TIMESTAMP)
-    `).run(req.params.key, value.toString());
+    await db.query(`
+      INSERT INTO settings (key, value, updated_at)
+      VALUES ($1, $2, CURRENT_TIMESTAMP)
+      ON CONFLICT (key) DO UPDATE SET
+        value = EXCLUDED.value,
+        updated_at = CURRENT_TIMESTAMP
+    `, [req.params.key, value.toString()]);
     
     logger.info(`Setting updated: ${req.params.key} = ${value}`);
     res.json({ key: req.params.key, value: value.toString() });
@@ -67,9 +71,9 @@ router.put('/:key', async (req, res) => {
 router.delete('/:key', async (req, res) => {
   try {
     const db = getDatabase();
-    const result = db.prepare('DELETE FROM settings WHERE key = ?').run(req.params.key);
+    const result = await db.query('DELETE FROM settings WHERE key = $1', [req.params.key]);
     
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Setting not found' });
     }
     
@@ -82,4 +86,3 @@ router.delete('/:key', async (req, res) => {
 });
 
 module.exports = router;
-

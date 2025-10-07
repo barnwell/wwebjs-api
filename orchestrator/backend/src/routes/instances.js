@@ -20,16 +20,15 @@ const defaultConfig = require('../config/default-instance-config');
 const router = express.Router();
 
 // Helper function to get next available port
-function getNextAvailablePort() {
+async function getNextAvailablePort() {
   const db = getDatabase();
-  const setting = db.prepare('SELECT value FROM settings WHERE key = ?').get('next_port');
-  const port = parseInt(setting.value);
+  const result = await db.query('SELECT value FROM settings WHERE key = $1', ['next_port']);
+  const port = parseInt(result.rows[0]?.value || process.env.WWEBJS_PORT_RANGE_START || '3000');
   
   const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || 3100);
   const nextPort = port >= maxPort ? parseInt(process.env.WWEBJS_PORT_RANGE_START || 3000) : port + 1;
   
-  db.prepare('UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?')
-    .run(nextPort.toString(), 'next_port');
+  await db.query('UPDATE settings SET value = $1, updated_at = CURRENT_TIMESTAMP WHERE key = $2', [nextPort.toString(), 'next_port']);
   
   return port;
 }
@@ -59,15 +58,15 @@ router.get('/default-config', (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const db = getDatabase();
-    const instances = db.prepare('SELECT * FROM instances ORDER BY created_at DESC').all();
+    const result = await db.query('SELECT * FROM instances ORDER BY created_at DESC');
     
     // Parse JSON config for each instance
-    const parsedInstances = instances.map(instance => ({
+    const instances = result.rows.map(instance => ({
       ...instance,
       config: JSON.parse(instance.config)
     }));
     
-    res.json(parsedInstances);
+    res.json(instances);
   } catch (error) {
     logger.error('Error fetching instances:', error);
     res.status(500).json({ error: error.message });
@@ -78,12 +77,13 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const db = getDatabase();
-    const instance = db.prepare('SELECT * FROM instances WHERE id = ?').get(req.params.id);
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
-    if (!instance) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Instance not found' });
     }
     
+    const instance = result.rows[0];
     instance.config = JSON.parse(instance.config);
     res.json(instance);
   } catch (error) {
@@ -103,14 +103,14 @@ router.post('/', async (req, res) => {
     
     const db = getDatabase();
     const id = uuidv4();
-    const port = getNextAvailablePort();
+    const port = await getNextAvailablePort();
     
     // Merge with template if provided
     let finalConfig = { ...defaultConfig };
     if (templateId) {
-      const template = db.prepare('SELECT config FROM templates WHERE id = ?').get(templateId);
-      if (template) {
-        finalConfig = { ...finalConfig, ...JSON.parse(template.config) };
+      const templateResult = await db.query('SELECT config FROM templates WHERE id = $1', [templateId]);
+      if (templateResult.rows.length > 0) {
+        finalConfig = { ...finalConfig, ...JSON.parse(templateResult.rows[0].config) };
       }
     }
     
@@ -122,12 +122,13 @@ router.post('/', async (req, res) => {
     finalConfig.API_KEY = finalConfig.API_KEY || uuidv4();
     
     // Create instance record
-    db.prepare(`
+    await db.query(`
       INSERT INTO instances (id, name, description, port, config, status)
-      VALUES (?, ?, ?, ?, ?, 'stopped')
-    `).run(id, name, description || '', port, JSON.stringify(finalConfig));
+      VALUES ($1, $2, $3, $4, $5, 'stopped')
+    `, [id, name, description || '', port, JSON.stringify(finalConfig)]);
     
-    const instance = db.prepare('SELECT * FROM instances WHERE id = ?').get(id);
+    const instanceResult = await db.query('SELECT * FROM instances WHERE id = $1', [id]);
+    const instance = instanceResult.rows[0];
     instance.config = JSON.parse(instance.config);
     
     broadcast({ type: 'instance_created', data: instance });
@@ -144,12 +145,13 @@ router.post('/', async (req, res) => {
 router.post('/:id/start', async (req, res) => {
   try {
     const db = getDatabase();
-    const instance = db.prepare('SELECT * FROM instances WHERE id = ?').get(req.params.id);
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
-    if (!instance) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Instance not found' });
     }
     
+    const instance = result.rows[0];
     const config = JSON.parse(instance.config);
     
     // Check if container exists
@@ -158,13 +160,14 @@ router.post('/:id/start', async (req, res) => {
       try {
         await startContainer(instance.container_id);
         
-        db.prepare(`
+        await db.query(`
           UPDATE instances 
           SET status = 'running', last_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(instance.id);
+          WHERE id = $1
+        `, [instance.id]);
         
-        const updatedInstance = db.prepare('SELECT * FROM instances WHERE id = ?').get(instance.id);
+        const updatedResult = await db.query('SELECT * FROM instances WHERE id = $1', [instance.id]);
+        const updatedInstance = updatedResult.rows[0];
         updatedInstance.config = JSON.parse(updatedInstance.config);
         
         broadcast({ type: 'instance_started', data: updatedInstance });
@@ -195,13 +198,14 @@ router.post('/:id/start', async (req, res) => {
     
     await container.start();
     
-    db.prepare(`
+    await db.query(`
       UPDATE instances 
-      SET container_id = ?, status = 'running', last_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(container.id, instance.id);
+      SET status = 'running', container_id = $1, last_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [container.id, instance.id]);
     
-    const updatedInstance = db.prepare('SELECT * FROM instances WHERE id = ?').get(instance.id);
+    const updatedResult = await db.query('SELECT * FROM instances WHERE id = $1', [instance.id]);
+    const updatedInstance = updatedResult.rows[0];
     updatedInstance.config = JSON.parse(updatedInstance.config);
     
     broadcast({ type: 'instance_started', data: updatedInstance });
@@ -218,25 +222,26 @@ router.post('/:id/start', async (req, res) => {
 router.post('/:id/stop', async (req, res) => {
   try {
     const db = getDatabase();
-    const instance = db.prepare('SELECT * FROM instances WHERE id = ?').get(req.params.id);
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
-    if (!instance) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Instance not found' });
     }
     
-    if (!instance.container_id) {
-      return res.status(400).json({ error: 'Instance has no container' });
+    const instance = result.rows[0];
+    
+    if (instance.container_id) {
+      await stopContainer(instance.container_id);
     }
     
-    await stopContainer(instance.container_id);
-    
-    db.prepare(`
+    await db.query(`
       UPDATE instances 
-      SET status = 'stopped', session_status = 'disconnected', last_stopped_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(instance.id);
+      SET status = 'stopped', last_stopped_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [instance.id]);
     
-    const updatedInstance = db.prepare('SELECT * FROM instances WHERE id = ?').get(instance.id);
+    const updatedResult = await db.query('SELECT * FROM instances WHERE id = $1', [instance.id]);
+    const updatedInstance = updatedResult.rows[0];
     updatedInstance.config = JSON.parse(updatedInstance.config);
     
     broadcast({ type: 'instance_stopped', data: updatedInstance });
@@ -253,25 +258,26 @@ router.post('/:id/stop', async (req, res) => {
 router.post('/:id/restart', async (req, res) => {
   try {
     const db = getDatabase();
-    const instance = db.prepare('SELECT * FROM instances WHERE id = ?').get(req.params.id);
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
-    if (!instance) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Instance not found' });
     }
     
-    if (!instance.container_id) {
-      return res.status(400).json({ error: 'Instance has no container' });
+    const instance = result.rows[0];
+    
+    if (instance.container_id) {
+      await restartContainer(instance.container_id);
     }
     
-    await restartContainer(instance.container_id);
-    
-    db.prepare(`
+    await db.query(`
       UPDATE instances 
-      SET last_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(instance.id);
+      SET status = 'running', last_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [instance.id]);
     
-    const updatedInstance = db.prepare('SELECT * FROM instances WHERE id = ?').get(instance.id);
+    const updatedResult = await db.query('SELECT * FROM instances WHERE id = $1', [instance.id]);
+    const updatedInstance = updatedResult.rows[0];
     updatedInstance.config = JSON.parse(updatedInstance.config);
     
     broadcast({ type: 'instance_restarted', data: updatedInstance });
@@ -288,28 +294,31 @@ router.post('/:id/restart', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const db = getDatabase();
-    const instance = db.prepare('SELECT * FROM instances WHERE id = ?').get(req.params.id);
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
-    if (!instance) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Instance not found' });
     }
     
-    // Remove container if exists
+    const instance = result.rows[0];
+    
+    // Stop and remove container if it exists
     if (instance.container_id) {
       try {
-        await removeContainer(instance.container_id, true);
+        await stopContainer(instance.container_id);
+        await removeContainer(instance.container_id);
       } catch (error) {
-        logger.warn(`Error removing container: ${error.message}`);
+        logger.warn(`Error removing container ${instance.container_id}:`, error.message);
       }
     }
     
-    // Delete from database
-    db.prepare('DELETE FROM instances WHERE id = ?').run(instance.id);
+    // Delete instance from database
+    await db.query('DELETE FROM instances WHERE id = $1', [instance.id]);
     
     broadcast({ type: 'instance_deleted', data: { id: instance.id } });
     
     logger.info(`Instance deleted: ${instance.name} (${instance.id})`);
-    res.json({ message: 'Instance deleted successfully' });
+    res.json({ success: true, message: 'Instance deleted successfully' });
   } catch (error) {
     logger.error('Error deleting instance:', error);
     res.status(500).json({ error: error.message });
@@ -320,14 +329,16 @@ router.delete('/:id', async (req, res) => {
 router.get('/:id/stats', async (req, res) => {
   try {
     const db = getDatabase();
-    const instance = db.prepare('SELECT * FROM instances WHERE id = ?').get(req.params.id);
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
-    if (!instance) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Instance not found' });
     }
     
+    const instance = result.rows[0];
+    
     if (!instance.container_id) {
-      return res.status(400).json({ error: 'Instance has no container' });
+      return res.json({ error: 'Container not found' });
     }
     
     const stats = await getContainerStats(instance.container_id);
@@ -342,19 +353,20 @@ router.get('/:id/stats', async (req, res) => {
 router.get('/:id/logs', async (req, res) => {
   try {
     const db = getDatabase();
-    const instance = db.prepare('SELECT * FROM instances WHERE id = ?').get(req.params.id);
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
-    if (!instance) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Instance not found' });
     }
     
+    const instance = result.rows[0];
+    
     if (!instance.container_id) {
-      return res.status(400).json({ error: 'Instance has no container' });
+      return res.json({ error: 'Container not found' });
     }
     
     const tail = parseInt(req.query.tail) || 100;
-    const logs = await getContainerLogs(instance.container_id, { tail });
-    
+    const logs = await getContainerLogs(instance.container_id, tail);
     res.json({ logs });
   } catch (error) {
     logger.error('Error fetching instance logs:', error);
@@ -362,117 +374,58 @@ router.get('/:id/logs', async (req, res) => {
   }
 });
 
-// GET instance QR code
+// GET QR code for instance
 router.get('/:id/qr', async (req, res) => {
   try {
     const db = getDatabase();
-    const instance = db.prepare('SELECT * FROM instances WHERE id = ?').get(req.params.id);
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
-    if (!instance) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Instance not found' });
     }
     
-    if (instance.status !== 'running') {
-      return res.status(400).json({ error: 'Instance is not running' });
+    const instance = result.rows[0];
+    
+    if (!instance.container_id) {
+      return res.status(400).json({ error: 'Instance not running' });
     }
     
-    const config = JSON.parse(instance.config);
-    const apiKey = config.API_KEY;
+    // Get QR code from wwebjs-api instance
+    const qrUrl = `http://localhost:${instance.port}/session/qr/default`;
+    const qrResponse = await axios.get(qrUrl);
     
-    // Call wwebjs-api to get QR code
-    const response = await axios.get(
-      `http://localhost:${instance.port}/session/qr/default/image`,
-      { 
-        headers: { 'x-api-key': apiKey },
-        responseType: 'arraybuffer'
-      }
-    );
-    
-    const qrCodeBase64 = Buffer.from(response.data).toString('base64');
-    
-    res.json({ qrCode: `data:image/png;base64,${qrCodeBase64}` });
+    res.json({ qr: qrResponse.data });
   } catch (error) {
     logger.error('Error fetching QR code:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// GET instance session status
+// GET session status
 router.get('/:id/session-status', async (req, res) => {
   try {
     const db = getDatabase();
-    const instance = db.prepare('SELECT * FROM instances WHERE id = ?').get(req.params.id);
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
-    if (!instance) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Instance not found' });
     }
     
-    if (instance.status !== 'running') {
-      return res.json({ status: 'disconnected', message: 'Instance is not running' });
+    const instance = result.rows[0];
+    
+    if (!instance.container_id) {
+      return res.json({ status: 'disconnected', message: 'Instance not running' });
     }
     
-    const config = JSON.parse(instance.config);
-    const apiKey = config.API_KEY;
+    // Get session status from wwebjs-api instance
+    const statusUrl = `http://localhost:${instance.port}/session/status/default`;
+    const statusResponse = await axios.get(statusUrl);
     
-    // Call wwebjs-api to get session status
-    const response = await axios.get(
-      `http://localhost:${instance.port}/session/status/default`,
-      { headers: { 'x-api-key': apiKey } }
-    );
-    
-    const sessionStatus = response.data.state || 'disconnected';
-    
-    // Update database
-    db.prepare(`
-      UPDATE instances 
-      SET session_status = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(sessionStatus.toLowerCase(), instance.id);
-    
-    res.json(response.data);
+    res.json(statusResponse.data);
   } catch (error) {
     logger.error('Error fetching session status:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// UPDATE instance config
-router.patch('/:id', async (req, res) => {
-  try {
-    const { name, description, config } = req.body;
-    const db = getDatabase();
-    const instance = db.prepare('SELECT * FROM instances WHERE id = ?').get(req.params.id);
-    
-    if (!instance) {
-      return res.status(404).json({ error: 'Instance not found' });
-    }
-    
-    const currentConfig = JSON.parse(instance.config);
-    const updatedConfig = config ? { ...currentConfig, ...config } : currentConfig;
-    
-    db.prepare(`
-      UPDATE instances 
-      SET name = ?, description = ?, config = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(
-      name || instance.name,
-      description !== undefined ? description : instance.description,
-      JSON.stringify(updatedConfig),
-      instance.id
-    );
-    
-    const updatedInstance = db.prepare('SELECT * FROM instances WHERE id = ?').get(instance.id);
-    updatedInstance.config = JSON.parse(updatedInstance.config);
-    
-    broadcast({ type: 'instance_updated', data: updatedInstance });
-    
-    logger.info(`Instance updated: ${updatedInstance.name} (${instance.id})`);
-    res.json(updatedInstance);
-  } catch (error) {
-    logger.error('Error updating instance:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 module.exports = router;
-

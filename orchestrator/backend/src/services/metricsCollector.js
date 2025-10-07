@@ -1,6 +1,6 @@
-const { getDatabase } = require('./db');
-const { getContainerStats } = require('./docker');
-const { logger } = require('./utils/logger');
+const { getDatabase } = require('../db');
+const { getContainerStats } = require('../docker');
+const { logger } = require('../utils/logger');
 
 class MetricsCollector {
   constructor() {
@@ -42,32 +42,32 @@ class MetricsCollector {
       const db = getDatabase();
       
       // Get all running instances
-      const instances = db.prepare(`
+      const result = await db.query(`
         SELECT id, name, container_id 
         FROM instances 
         WHERE status = 'running' AND container_id IS NOT NULL
-      `).all();
+      `);
 
-      if (instances.length === 0) {
+      if (result.rows.length === 0) {
         return; // No running instances to collect metrics for
       }
 
-      const collectionPromises = instances.map(async (instance) => {
+      const collectionPromises = result.rows.map(async (instance) => {
         try {
           const stats = await getContainerStats(instance.container_id);
           
           // Insert metrics into database
-          db.prepare(`
+          await db.query(`
             INSERT INTO metrics (instance_id, cpu_usage, memory_usage, memory_limit, network_rx, network_tx)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `).run(
+            VALUES ($1, $2, $3, $4, $5, $6)
+          `, [
             instance.id,
             parseFloat(stats.cpuUsage),
             parseFloat(stats.memoryUsage),
             parseFloat(stats.memoryLimit),
             parseFloat(stats.networkRx),
             parseFloat(stats.networkTx)
-          );
+          ]);
 
           logger.debug(`Metrics collected for instance: ${instance.name}`);
         } catch (error) {
@@ -84,13 +84,13 @@ class MetricsCollector {
   async cleanupOldMetrics(daysToKeep = 30) {
     try {
       const db = getDatabase();
-      const result = db.prepare(`
+      const result = await db.query(`
         DELETE FROM metrics 
-        WHERE timestamp < datetime('now', '-${daysToKeep} days')
-      `).run();
+        WHERE timestamp < NOW() - INTERVAL '${daysToKeep} days'
+      `);
 
-      logger.info(`Cleaned up ${result.changes} old metrics records`);
-      return result.changes;
+      logger.info(`Cleaned up ${result.rowCount} old metrics records`);
+      return result.rowCount;
     } catch (error) {
       logger.error('Error cleaning up old metrics:', error);
       throw error;

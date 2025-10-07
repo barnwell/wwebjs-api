@@ -1,6 +1,26 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: wwebjs-orchestrator-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: orchestrator
+      POSTGRES_USER: orchestrator
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "15432:5432"  # Changed from 5432 to 15432
+    networks:
+      - orchestrator-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orchestrator -d orchestrator"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   orchestrator-backend:
     build:
       context: ./backend
@@ -8,13 +28,17 @@ services:
     container_name: wwebjs-orchestrator-backend
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "15000:5000"  # Changed from 5000 to 15000
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./backend/data:/usr/src/app/data
       - ./instances:/usr/src/app/instances
     env_file:
       - ./backend/.env
+    environment:
+      - DATABASE_URL=postgresql://orchestrator:${POSTGRES_PASSWORD:-orchestrator123}@postgres:5432/orchestrator
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - orchestrator-network
       - wwebjs-network
@@ -26,11 +50,14 @@ services:
     container_name: wwebjs-orchestrator-frontend
     restart: unless-stopped
     ports:
-      - "3001:80"
+      - "13001:80"  # Changed from 3001 to 13001
     depends_on:
       - orchestrator-backend
     networks:
       - orchestrator-network
+
+volumes:
+  postgres_data:
 
 networks:
   orchestrator-network:

@@ -9,15 +9,15 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const db = getDatabase();
-    const templates = db.prepare('SELECT * FROM templates ORDER BY is_default DESC, created_at DESC').all();
+    const result = await db.query('SELECT * FROM templates ORDER BY is_default DESC, created_at DESC');
     
-    const parsedTemplates = templates.map(template => ({
+    const templates = result.rows.map(template => ({
       ...template,
       config: JSON.parse(template.config),
       is_default: Boolean(template.is_default)
     }));
     
-    res.json(parsedTemplates);
+    res.json(templates);
   } catch (error) {
     logger.error('Error fetching templates:', error);
     res.status(500).json({ error: error.message });
@@ -28,12 +28,13 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const db = getDatabase();
-    const template = db.prepare('SELECT * FROM templates WHERE id = ?').get(req.params.id);
+    const result = await db.query('SELECT * FROM templates WHERE id = $1', [req.params.id]);
     
-    if (!template) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Template not found' });
     }
     
+    const template = result.rows[0];
     template.config = JSON.parse(template.config);
     template.is_default = Boolean(template.is_default);
     
@@ -58,15 +59,16 @@ router.post('/', async (req, res) => {
     
     // If this is set as default, unset other defaults
     if (is_default) {
-      db.prepare('UPDATE templates SET is_default = 0').run();
+      await db.query('UPDATE templates SET is_default = 0');
     }
     
-    db.prepare(`
+    await db.query(`
       INSERT INTO templates (id, name, description, config, is_default)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, name, description || '', JSON.stringify(config), is_default ? 1 : 0);
+      VALUES ($1, $2, $3, $4, $5)
+    `, [id, name, description || '', JSON.stringify(config), is_default ? 1 : 0]);
     
-    const template = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
+    const templateResult = await db.query('SELECT * FROM templates WHERE id = $1', [id]);
+    const template = templateResult.rows[0];
     template.config = JSON.parse(template.config);
     template.is_default = Boolean(template.is_default);
     
@@ -83,33 +85,35 @@ router.patch('/:id', async (req, res) => {
   try {
     const { name, description, config, is_default } = req.body;
     const db = getDatabase();
-    const template = db.prepare('SELECT * FROM templates WHERE id = ?').get(req.params.id);
+    const result = await db.query('SELECT * FROM templates WHERE id = $1', [req.params.id]);
     
-    if (!template) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Template not found' });
     }
     
+    const template = result.rows[0];
     const currentConfig = JSON.parse(template.config);
     const updatedConfig = config ? { ...currentConfig, ...config } : currentConfig;
     
     // If this is set as default, unset other defaults
     if (is_default && !template.is_default) {
-      db.prepare('UPDATE templates SET is_default = 0').run();
+      await db.query('UPDATE templates SET is_default = 0');
     }
     
-    db.prepare(`
+    await db.query(`
       UPDATE templates 
-      SET name = ?, description = ?, config = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(
+      SET name = $1, description = $2, config = $3, is_default = $4, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $5
+    `, [
       name || template.name,
       description !== undefined ? description : template.description,
       JSON.stringify(updatedConfig),
       is_default !== undefined ? (is_default ? 1 : 0) : template.is_default,
       template.id
-    );
+    ]);
     
-    const updatedTemplate = db.prepare('SELECT * FROM templates WHERE id = ?').get(template.id);
+    const updatedResult = await db.query('SELECT * FROM templates WHERE id = $1', [template.id]);
+    const updatedTemplate = updatedResult.rows[0];
     updatedTemplate.config = JSON.parse(updatedTemplate.config);
     updatedTemplate.is_default = Boolean(updatedTemplate.is_default);
     
@@ -125,13 +129,14 @@ router.patch('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const db = getDatabase();
-    const template = db.prepare('SELECT * FROM templates WHERE id = ?').get(req.params.id);
+    const result = await db.query('SELECT * FROM templates WHERE id = $1', [req.params.id]);
     
-    if (!template) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Template not found' });
     }
     
-    db.prepare('DELETE FROM templates WHERE id = ?').run(template.id);
+    const template = result.rows[0];
+    await db.query('DELETE FROM templates WHERE id = $1', [template.id]);
     
     logger.info(`Template deleted: ${template.name} (${template.id})`);
     res.json({ message: 'Template deleted successfully' });
@@ -142,4 +147,3 @@ router.delete('/:id', async (req, res) => {
 });
 
 module.exports = router;
-
