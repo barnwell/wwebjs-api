@@ -1,0 +1,85 @@
+const express = require('express');
+const { getDatabase } = require('../db');
+const { logger } = require('../utils/logger');
+
+const router = express.Router();
+
+// GET all settings
+router.get('/', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const settings = db.prepare('SELECT * FROM settings').all();
+    
+    const settingsObj = {};
+    settings.forEach(setting => {
+      settingsObj[setting.key] = setting.value;
+    });
+    
+    res.json(settingsObj);
+  } catch (error) {
+    logger.error('Error fetching settings:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET setting by key
+router.get('/:key', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
+    
+    if (!setting) {
+      return res.status(404).json({ error: 'Setting not found' });
+    }
+    
+    res.json({ key: setting.key, value: setting.value });
+  } catch (error) {
+    logger.error('Error fetching setting:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// UPDATE setting
+router.put('/:key', async (req, res) => {
+  try {
+    const { value } = req.body;
+    
+    if (value === undefined) {
+      return res.status(400).json({ error: 'Value is required' });
+    }
+    
+    const db = getDatabase();
+    
+    db.prepare(`
+      INSERT OR REPLACE INTO settings (key, value, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+    `).run(req.params.key, value.toString());
+    
+    logger.info(`Setting updated: ${req.params.key} = ${value}`);
+    res.json({ key: req.params.key, value: value.toString() });
+  } catch (error) {
+    logger.error('Error updating setting:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE setting
+router.delete('/:key', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const result = db.prepare('DELETE FROM settings WHERE key = ?').run(req.params.key);
+    
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Setting not found' });
+    }
+    
+    logger.info(`Setting deleted: ${req.params.key}`);
+    res.json({ message: 'Setting deleted successfully' });
+  } catch (error) {
+    logger.error('Error deleting setting:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+module.exports = router;
+

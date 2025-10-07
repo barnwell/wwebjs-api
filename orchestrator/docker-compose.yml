@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  orchestrator-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: wwebjs-orchestrator-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./backend/data:/usr/src/app/data
+      - ./instances:/usr/src/app/instances
+    env_file:
+      - ./backend/.env
+    networks:
+      - orchestrator-network
+      - wwebjs-network
+
+  orchestrator-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: wwebjs-orchestrator-frontend
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    depends_on:
+      - orchestrator-backend
+    networks:
+      - orchestrator-network
+
+networks:
+  orchestrator-network:
+    driver: bridge
+  wwebjs-network:
+    external: true
+
