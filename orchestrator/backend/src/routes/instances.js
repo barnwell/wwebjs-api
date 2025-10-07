@@ -45,6 +45,16 @@ function buildEnvVars(config) {
   return env;
 }
 
+// GET default instance configuration
+router.get('/default-config', (req, res) => {
+  try {
+    res.json(defaultConfig);
+  } catch (error) {
+    logger.error('Error getting default config:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET all instances
 router.get('/', async (req, res) => {
   try {

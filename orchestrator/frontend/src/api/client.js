@@ -41,6 +41,7 @@ export const instancesAPI = {
   getLogs: (id, tail = 100) => api.get(`/instances/${id}/logs?tail=${tail}`),
   getQR: (id) => api.get(`/instances/${id}/qr`),
   getSessionStatus: (id) => api.get(`/instances/${id}/session-status`),
+  getDefaultConfig: () => api.get('/instances/default-config'),
 }
 
 // Templates API

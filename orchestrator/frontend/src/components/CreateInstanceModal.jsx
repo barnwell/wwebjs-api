@@ -1,47 +1,33 @@
-import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { instancesAPI } from '../api/client'
 
 export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
+  // Fetch default configuration from backend
+  const { data: defaultConfig, isLoading: isLoadingConfig } = useQuery({
+    queryKey: ['default-config'],
+    queryFn: instancesAPI.getDefaultConfig,
+    select: (response) => response.data,
+  })
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     templateId: templates.find(t => t.is_default)?.id || '',
-    config: {
-      // Application Configuration
-      PORT: '3000',
-      API_KEY: 'SET_YOUR_API_KEY_HERE',
-      BASE_WEBHOOK_URL: 'http://localhost:3000/localCallbackExample',
-      ENABLE_LOCAL_CALLBACK_EXAMPLE: 'TRUE',
-      RATE_LIMIT_MAX: '1000',
-      RATE_LIMIT_WINDOW_MS: '1000',
-      
-      // Client Configuration
-      MAX_ATTACHMENT_SIZE: '10000000',
-      SET_MESSAGES_AS_SEEN: 'TRUE',
-      DISABLED_CALLBACKS: 'message_ack|message_reaction|unread_count|message_edit|message_ciphertext|message_create',
-      WEB_VERSION: '2.2328.5',
-      WEB_VERSION_CACHE_TYPE: 'none',
-      RECOVER_SESSIONS: 'TRUE',
-      CHROME_BIN: '',
-      HEADLESS: 'TRUE',
-      RELEASE_BROWSER_LOCK: 'TRUE',
-      LOG_LEVEL: 'info',
-      ENABLE_WEBHOOK: 'TRUE',
-      ENABLE_WEBSOCKET: 'FALSE',
-      AUTO_START_SESSIONS: 'TRUE',
-      
-      // Session File Storage
-      SESSIONS_PATH: './sessions',
-      ENABLE_SWAGGER_ENDPOINT: 'TRUE',
-      
-      // Reverse Proxy / Load Balancer
-      BASE_PATH: '',
-      TRUST_PROXY: 'FALSE',
-    },
+    config: {},
   })
+
+  // Update form data when default config is loaded
+  useEffect(() => {
+    if (defaultConfig) {
+      setFormData(prev => ({
+        ...prev,
+        config: { ...defaultConfig }
+      }))
+    }
+  }, [defaultConfig])
 
   const createMutation = useMutation({
     mutationFn: instancesAPI.create,
@@ -56,6 +42,10 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
+    if (!defaultConfig) {
+      toast.error('Default configuration not loaded yet. Please wait.')
+      return
+    }
     createMutation.mutate(formData)
   }
 
@@ -76,6 +66,14 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
           </button>
         </div>
 
+        {isLoadingConfig ? (
+          <div className="p-6 flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading default configuration...</p>
+            </div>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           <div>
             <label className="label">Instance Name *</label>
@@ -156,17 +154,6 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
                 <h4 className="font-medium text-sm text-gray-700 mb-3">Webhook Configuration</h4>
                 <div className="space-y-3">
                   <div>
-                    <label className="label">Webhook URL</label>
-                    <input
-                      type="url"
-                      value={formData.config.BASE_WEBHOOK_URL}
-                      onChange={(e) => handleConfigChange('BASE_WEBHOOK_URL', e.target.value)}
-                      className="input w-full"
-                      placeholder="http://localhost:3000/localCallbackExample"
-                    />
-                  </div>
-
-                  <div>
                     <label className="label">Enable Webhook</label>
                     <select
                       value={formData.config.ENABLE_WEBHOOK}
@@ -176,6 +163,22 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
                       <option value="true">Yes</option>
                       <option value="false">No</option>
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="label">Webhook URL</label>
+                    <input
+                      type="url"
+                      value={formData.config.BASE_WEBHOOK_URL}
+                      onChange={(e) => handleConfigChange('BASE_WEBHOOK_URL', e.target.value)}
+                      className="input w-full"
+                      placeholder="https://your-webhook-endpoint.com/webhook (optional - can be set later)"
+                    />
+                    {formData.config.ENABLE_WEBHOOK === 'true' && (!formData.config.BASE_WEBHOOK_URL || formData.config.BASE_WEBHOOK_URL.trim() === '') && (
+                      <p className="text-sm text-amber-600 mt-1">
+                        ⚠️ Webhook is enabled but no URL provided. You can set a webhook URL later when starting a session.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -393,13 +396,14 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
             </button>
             <button
               type="submit"
-              disabled={createMutation.isPending}
+              disabled={createMutation.isPending || isLoadingConfig}
               className="btn btn-primary flex-1"
             >
               {createMutation.isPending ? 'Creating...' : 'Create Instance'}
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   )

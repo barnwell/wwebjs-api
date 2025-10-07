@@ -7,10 +7,12 @@ const { Chat, Message } = require('whatsapp-web.js/src/structures')
 
 // Trigger webhook endpoint
 const triggerWebhook = (webhookURL, sessionId, dataType, data) => {
-  if (enableWebHook) {
+  if (enableWebHook && webhookURL && webhookURL.trim() !== '') {
     axios.post(webhookURL, { dataType, data, sessionId }, { headers: { 'x-api-key': globalApiKey } })
       .then(() => logger.debug({ sessionId, dataType, data: data || '' }, `Webhook message sent to ${webhookURL}`))
       .catch(error => logger.error({ sessionId, dataType, err: error, data: data || '' }, `Failed to send webhook message to ${webhookURL}`))
+  } else if (enableWebHook && (!webhookURL || webhookURL.trim() === '')) {
+    logger.debug({ sessionId, dataType }, 'Webhook enabled but no valid webhook URL provided - skipping webhook call')
   }
 }
 

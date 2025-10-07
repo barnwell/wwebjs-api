@@ -8,7 +8,7 @@ module.exports = {
   // Application Configuration
   PORT: '3000',
   API_KEY: 'SET_YOUR_API_KEY_HERE',
-  BASE_WEBHOOK_URL: 'http://localhost:3000/localCallbackExample',
+  BASE_WEBHOOK_URL: '',
   ENABLE_LOCAL_CALLBACK_EXAMPLE: 'TRUE',
   RATE_LIMIT_MAX: '1000',
   RATE_LIMIT_WINDOW_MS: '1000',

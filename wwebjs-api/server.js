@@ -6,8 +6,8 @@ const { restoreSessions } = require('./src/sessions')
 
 // Check if BASE_WEBHOOK_URL environment variable is available when WebHook is enabled
 if (!baseWebhookURL && enableWebHook) {
-  logger.error('BASE_WEBHOOK_URL environment variable is not set. Exiting...')
-  process.exit(1) // Terminate the application with an error code
+  logger.warn('BASE_WEBHOOK_URL environment variable is not set but webhooks are enabled. Webhooks will be disabled until a valid URL is provided.')
+  // Don't exit - allow the application to start but disable webhooks
 }
 
 const server = app.listen(servicePort, () => {
