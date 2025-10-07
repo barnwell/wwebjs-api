@@ -42,6 +42,14 @@ export const instancesAPI = {
   getQR: (id) => api.get(`/instances/${id}/qr`),
   getSessionStatus: (id) => api.get(`/instances/${id}/session-status`),
   getDefaultConfig: () => api.get('/instances/default-config'),
+  // Session management
+  getSessions: (id) => api.get(`/instances/${id}/sessions`),
+  deleteSession: (id, sessionId) => api.delete(`/instances/${id}/sessions/${sessionId}`),
+  deleteAllSessions: (id) => api.delete(`/instances/${id}/sessions`),
+  getResources: (id) => api.get(`/instances/${id}/resources`),
+  // Port management
+  checkPortAvailability: (port) => api.get(`/instances/port-availability/${port}`),
+  getAvailablePorts: () => api.get('/instances/available-ports'),
 }
 
 // Templates API

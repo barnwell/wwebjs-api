@@ -1,0 +1,454 @@
+import { useState, useEffect } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { X, CheckCircle, XCircle, Loader, Save, AlertTriangle } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { instancesAPI } from '../api/client'
+
+export default function EditInstanceModal({ instance, onClose, onSuccess }) {
+  const queryClient = useQueryClient()
+  
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    config: {},
+    port: '',
+    useCustomPort: false,
+  })
+
+  const [portStatus, setPortStatus] = useState({
+    checking: false,
+    available: null,
+    message: ''
+  })
+
+  const [hasChanges, setHasChanges] = useState(false)
+
+  // Initialize form data when instance changes
+  useEffect(() => {
+    if (instance) {
+      setFormData({
+        name: instance.name || '',
+        description: instance.description || '',
+        config: { ...instance.config },
+        port: instance.port?.toString() || '',
+        useCustomPort: false, // Start with auto-assign
+      })
+      setHasChanges(false)
+    }
+  }, [instance])
+
+  const updateMutation = useMutation({
+    mutationFn: (data) => instancesAPI.update(instance.id, data),
+    onSuccess: () => {
+      toast.success('Instance updated successfully')
+      queryClient.invalidateQueries(['instances'])
+      queryClient.invalidateQueries(['instances', instance.id])
+      onSuccess()
+    },
+    onError: (error) => {
+      toast.error(`Failed to update instance: ${error.message}`)
+    },
+  })
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    
+    // Validate custom port if selected
+    if (formData.useCustomPort && formData.port) {
+      if (portStatus.available === false) {
+        toast.error('Selected port is not available. Please choose a different port.')
+        return
+      }
+      if (portStatus.checking) {
+        toast.error('Please wait for port availability check to complete.')
+        return
+      }
+    }
+    
+    // Prepare submission data
+    const submissionData = {
+      name: formData.name,
+      description: formData.description,
+      config: formData.config,
+      ...(formData.useCustomPort && formData.port && { port: parseInt(formData.port) })
+    }
+    
+    updateMutation.mutate(submissionData)
+  }
+
+  const handleConfigChange = (key, value) => {
+    setFormData(prev => ({
+      ...prev,
+      config: { ...prev.config, [key]: value }
+    }))
+    setHasChanges(true)
+  }
+
+  const handleFieldChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+    setHasChanges(true)
+  }
+
+  // Check port availability
+  const checkPortAvailability = async (port) => {
+    if (!port || port < 3000 || port > 3100) {
+      setPortStatus({
+        checking: false,
+        available: false,
+        message: 'Port must be between 3000 and 3100'
+      })
+      return
+    }
+
+    setPortStatus({ checking: true, available: null, message: '' })
+    
+    try {
+      const response = await instancesAPI.checkPortAvailability(port)
+      setPortStatus({
+        checking: false,
+        available: response.available,
+        message: response.message
+      })
+    } catch (error) {
+      setPortStatus({
+        checking: false,
+        available: false,
+        message: error.message
+      })
+    }
+  }
+
+  // Debounced port checking
+  useEffect(() => {
+    if (formData.useCustomPort && formData.port && parseInt(formData.port) !== instance?.port) {
+      const timeoutId = setTimeout(() => {
+        checkPortAvailability(parseInt(formData.port))
+      }, 500)
+      
+      return () => clearTimeout(timeoutId)
+    }
+  }, [formData.port, formData.useCustomPort, instance?.port])
+
+  if (!instance) {
+    return null
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Edit Instance: {instance.name}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Instance Status Warning */}
+          {instance.status === 'running' && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                <div>
+                  <h3 className="text-sm font-medium text-yellow-800">Instance is Running</h3>
+                  <p className="text-sm text-yellow-700 mt-1">
+                    Configuration changes will take effect after restarting the instance.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="label">Instance Name *</label>
+            <input
+              type="text"
+              required
+              value={formData.name}
+              onChange={(e) => handleFieldChange('name', e.target.value)}
+              className="input w-full"
+              placeholder="my-whatsapp-instance"
+            />
+          </div>
+
+          <div>
+            <label className="label">Description</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => handleFieldChange('description', e.target.value)}
+              className="input w-full"
+              rows={3}
+              placeholder="Optional description..."
+            />
+          </div>
+
+          {/* Port Selection */}
+          <div>
+            <label className="label">Port Assignment</label>
+            <div className="space-y-3">
+              <div className="flex items-center space-x-3">
+                <input
+                  type="radio"
+                  id="keep-port"
+                  name="port-mode"
+                  checked={!formData.useCustomPort}
+                  onChange={() => setFormData({ ...formData, useCustomPort: false, port: instance.port.toString() })}
+                  className="text-blue-600"
+                />
+                <label htmlFor="keep-port" className="text-sm font-medium">
+                  Keep current port ({instance.port})
+                </label>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                <input
+                  type="radio"
+                  id="change-port"
+                  name="port-mode"
+                  checked={formData.useCustomPort}
+                  onChange={() => setFormData({ ...formData, useCustomPort: true })}
+                  className="text-blue-600"
+                />
+                <label htmlFor="change-port" className="text-sm font-medium">
+                  Change port
+                </label>
+              </div>
+              
+              {formData.useCustomPort && (
+                <div className="ml-6 space-y-2">
+                  <input
+                    type="number"
+                    value={formData.port}
+                    onChange={(e) => handleFieldChange('port', e.target.value)}
+                    className="input w-full"
+                    placeholder="3000"
+                    min="3000"
+                    max="3100"
+                  />
+                  
+                  {/* Port Status Indicator */}
+                  {formData.port && parseInt(formData.port) !== instance.port && (
+                    <div className="flex items-center space-x-2 text-sm">
+                      {portStatus.checking && (
+                        <>
+                          <Loader className="w-4 h-4 animate-spin text-blue-500" />
+                          <span className="text-blue-600">Checking availability...</span>
+                        </>
+                      )}
+                      {!portStatus.checking && portStatus.available === true && (
+                        <>
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          <span className="text-green-600">{portStatus.message}</span>
+                        </>
+                      )}
+                      {!portStatus.checking && portStatus.available === false && (
+                        <>
+                          <XCircle className="w-4 h-4 text-red-500" />
+                          <span className="text-red-600">{portStatus.message}</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-medium">Configuration</h3>
+              {hasChanges && (
+                <span className="text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded">
+                  Unsaved changes
+                </span>
+              )}
+            </div>
+            
+            <div className="space-y-6">
+              {/* Core Configuration */}
+              <div>
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Core Configuration</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">API Key</label>
+                    <input
+                      type="text"
+                      value={formData.config.API_KEY || ''}
+                      onChange={(e) => handleConfigChange('API_KEY', e.target.value)}
+                      className="input w-full"
+                      placeholder="SET_YOUR_API_KEY_HERE"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Log Level</label>
+                    <select
+                      value={formData.config.LOG_LEVEL || 'info'}
+                      onChange={(e) => handleConfigChange('LOG_LEVEL', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="error">Error</option>
+                      <option value="warn">Warn</option>
+                      <option value="info">Info</option>
+                      <option value="debug">Debug</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Webhook Configuration */}
+              <div>
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Webhook Configuration</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">Base Webhook URL</label>
+                    <input
+                      type="url"
+                      value={formData.config.BASE_WEBHOOK_URL || ''}
+                      onChange={(e) => handleConfigChange('BASE_WEBHOOK_URL', e.target.value)}
+                      className="input w-full"
+                      placeholder="https://your-webhook-url.com"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Enable Webhook</label>
+                    <select
+                      value={formData.config.ENABLE_WEBHOOK || 'true'}
+                      onChange={(e) => handleConfigChange('ENABLE_WEBHOOK', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Client Configuration */}
+              <div>
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Client Configuration</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">Headless Mode</label>
+                    <select
+                      value={formData.config.HEADLESS || 'true'}
+                      onChange={(e) => handleConfigChange('HEADLESS', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="label">Recover Sessions</label>
+                    <select
+                      value={formData.config.RECOVER_SESSIONS || 'true'}
+                      onChange={(e) => handleConfigChange('RECOVER_SESSIONS', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="label">Auto Start Sessions</label>
+                    <select
+                      value={formData.config.AUTO_START_SESSIONS || 'true'}
+                      onChange={(e) => handleConfigChange('AUTO_START_SESSIONS', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Advanced Configuration */}
+              <div>
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Advanced Configuration</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">Enable WebSocket</label>
+                    <select
+                      value={formData.config.ENABLE_WEBSOCKET || 'false'}
+                      onChange={(e) => handleConfigChange('ENABLE_WEBSOCKET', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="label">Rate Limit Max</label>
+                    <input
+                      type="number"
+                      value={formData.config.RATE_LIMIT_MAX || '1000'}
+                      onChange={(e) => handleConfigChange('RATE_LIMIT_MAX', e.target.value)}
+                      className="input w-full"
+                      placeholder="1000"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Rate Limit Window (ms)</label>
+                    <input
+                      type="number"
+                      value={formData.config.RATE_LIMIT_WINDOW_MS || '1000'}
+                      onChange={(e) => handleConfigChange('RATE_LIMIT_WINDOW_MS', e.target.value)}
+                      className="input w-full"
+                      placeholder="1000"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Max Attachment Size</label>
+                    <input
+                      type="number"
+                      value={formData.config.MAX_ATTACHMENT_SIZE || '10000000'}
+                      onChange={(e) => handleConfigChange('MAX_ATTACHMENT_SIZE', e.target.value)}
+                      className="input w-full"
+                      placeholder="10000000"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex justify-end space-x-3 pt-6 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn btn-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={updateMutation.isPending || (formData.useCustomPort && portStatus.checking)}
+              className="btn btn-primary flex items-center space-x-2"
+            >
+              {updateMutation.isPending ? (
+                <>
+                  <Loader className="w-4 h-4 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span>Save Changes</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}

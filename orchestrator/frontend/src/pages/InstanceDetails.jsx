@@ -1,14 +1,17 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Activity, Terminal, Settings as SettingsIcon } from 'lucide-react'
+import { ArrowLeft, Activity, Terminal, Settings as SettingsIcon, Users, Edit } from 'lucide-react'
 import { instancesAPI, metricsAPI } from '../api/client'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import SessionManagement from '../components/SessionManagement'
+import EditInstanceModal from '../components/EditInstanceModal'
 
 export default function InstanceDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('metrics')
+  const [showEditModal, setShowEditModal] = useState(false)
 
   const { data: instance, isLoading } = useQuery({
     queryKey: ['instances', id],
@@ -73,7 +76,15 @@ export default function InstanceDetails() {
               <p className="text-gray-600 mt-2">{instance.description}</p>
             )}
           </div>
-          <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowEditModal(true)}
+              className="btn btn-secondary flex items-center gap-2"
+            >
+              <Edit className="w-4 h-4" />
+              Edit Instance
+            </button>
+            <div className="flex flex-col gap-2">
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
               instance.status === 'running'
                 ? 'bg-green-100 text-green-700'
@@ -88,6 +99,7 @@ export default function InstanceDetails() {
             }`}>
               {instance.session_status || 'disconnected'}
             </span>
+            </div>
           </div>
         </div>
 
@@ -124,6 +136,7 @@ export default function InstanceDetails() {
         <div className="flex gap-6">
           {[
             { id: 'metrics', label: 'Metrics', icon: Activity },
+            { id: 'sessions', label: 'Sessions', icon: Users },
             { id: 'logs', label: 'Logs', icon: Terminal },
             { id: 'config', label: 'Configuration', icon: SettingsIcon },
           ].map((tab) => {
@@ -147,6 +160,10 @@ export default function InstanceDetails() {
       </div>
 
       {/* Tab Content */}
+      {activeTab === 'sessions' && (
+        <SessionManagement instanceId={id} />
+      )}
+
       {activeTab === 'metrics' && (
         <div className="card">
           <h2 className="text-xl font-semibold mb-6">Resource Usage (Last Hour)</h2>
@@ -214,6 +231,15 @@ export default function InstanceDetails() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Edit Instance Modal */}
+      {showEditModal && (
+        <EditInstanceModal
+          instance={instance}
+          onClose={() => setShowEditModal(false)}
+          onSuccess={() => setShowEditModal(false)}
+        />
       )}
     </div>
   )

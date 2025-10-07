@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { X } from 'lucide-react'
+import { X, CheckCircle, XCircle, Loader } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { instancesAPI } from '../api/client'
 
@@ -17,6 +17,14 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
     description: '',
     templateId: templates.find(t => t.is_default)?.id || '',
     config: {},
+    port: '', // Add port field
+    useCustomPort: false, // Add custom port toggle
+  })
+
+  const [portStatus, setPortStatus] = useState({
+    checking: false,
+    available: null,
+    message: ''
   })
 
   // Update form data when default config is loaded
@@ -46,7 +54,29 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
       toast.error('Default configuration not loaded yet. Please wait.')
       return
     }
-    createMutation.mutate(formData)
+    
+    // Validate custom port if selected
+    if (formData.useCustomPort && formData.port) {
+      if (portStatus.available === false) {
+        toast.error('Selected port is not available. Please choose a different port.')
+        return
+      }
+      if (portStatus.checking) {
+        toast.error('Please wait for port availability check to complete.')
+        return
+      }
+    }
+    
+    // Prepare submission data
+    const submissionData = {
+      name: formData.name,
+      description: formData.description,
+      templateId: formData.templateId || undefined,
+      config: formData.config,
+      ...(formData.useCustomPort && formData.port && { port: parseInt(formData.port) })
+    }
+    
+    createMutation.mutate(submissionData)
   }
 
   const handleConfigChange = (key, value) => {
@@ -55,6 +85,46 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
       config: { ...prev.config, [key]: value }
     }))
   }
+
+  // Check port availability
+  const checkPortAvailability = async (port) => {
+    if (!port || port < 3000 || port > 3100) {
+      setPortStatus({
+        checking: false,
+        available: false,
+        message: 'Port must be between 3000 and 3100'
+      })
+      return
+    }
+
+    setPortStatus({ checking: true, available: null, message: '' })
+    
+    try {
+      const response = await instancesAPI.checkPortAvailability(port)
+      setPortStatus({
+        checking: false,
+        available: response.available,
+        message: response.message
+      })
+    } catch (error) {
+      setPortStatus({
+        checking: false,
+        available: false,
+        message: error.message
+      })
+    }
+  }
+
+  // Debounced port checking
+  useEffect(() => {
+    if (formData.useCustomPort && formData.port) {
+      const timeoutId = setTimeout(() => {
+        checkPortAvailability(parseInt(formData.port))
+      }, 500)
+      
+      return () => clearTimeout(timeoutId)
+    }
+  }, [formData.port, formData.useCustomPort])
 
   const handleTemplateChange = (templateId) => {
     setFormData(prev => ({
@@ -122,6 +192,78 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
               rows={3}
               placeholder="Optional description..."
             />
+          </div>
+
+          {/* Port Selection */}
+          <div>
+            <label className="label">Port Assignment</label>
+            <div className="space-y-3">
+              <div className="flex items-center space-x-3">
+                <input
+                  type="radio"
+                  id="auto-port"
+                  name="port-mode"
+                  checked={!formData.useCustomPort}
+                  onChange={() => setFormData({ ...formData, useCustomPort: false, port: '' })}
+                  className="text-blue-600"
+                />
+                <label htmlFor="auto-port" className="text-sm font-medium">
+                  Auto-assign port (recommended)
+                </label>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                <input
+                  type="radio"
+                  id="custom-port"
+                  name="port-mode"
+                  checked={formData.useCustomPort}
+                  onChange={() => setFormData({ ...formData, useCustomPort: true })}
+                  className="text-blue-600"
+                />
+                <label htmlFor="custom-port" className="text-sm font-medium">
+                  Use specific port
+                </label>
+              </div>
+              
+              {formData.useCustomPort && (
+                <div className="ml-6 space-y-2">
+                  <input
+                    type="number"
+                    value={formData.port}
+                    onChange={(e) => setFormData({ ...formData, port: e.target.value })}
+                    className="input w-full"
+                    placeholder="3000"
+                    min="3000"
+                    max="3100"
+                  />
+                  
+                  {/* Port Status Indicator */}
+                  {formData.port && (
+                    <div className="flex items-center space-x-2 text-sm">
+                      {portStatus.checking && (
+                        <>
+                          <Loader className="w-4 h-4 animate-spin text-blue-500" />
+                          <span className="text-blue-600">Checking availability...</span>
+                        </>
+                      )}
+                      {!portStatus.checking && portStatus.available === true && (
+                        <>
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          <span className="text-green-600">{portStatus.message}</span>
+                        </>
+                      )}
+                      {!portStatus.checking && portStatus.available === false && (
+                        <>
+                          <XCircle className="w-4 h-4 text-red-500" />
+                          <span className="text-red-600">{portStatus.message}</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div>

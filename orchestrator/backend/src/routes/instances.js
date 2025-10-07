@@ -33,6 +33,20 @@ async function getNextAvailablePort() {
   return port;
 }
 
+// Helper function to check if a port is available
+async function isPortAvailable(port) {
+  const db = getDatabase();
+  const result = await db.query('SELECT id FROM instances WHERE port = $1', [port]);
+  return result.rows.length === 0;
+}
+
+// Helper function to validate port range
+function isValidPort(port) {
+  const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '3000');
+  const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '3100');
+  return port >= minPort && port <= maxPort;
+}
+
 // Helper function to build environment variables from config
 function buildEnvVars(config) {
   const env = [];
@@ -50,6 +64,56 @@ router.get('/default-config', (req, res) => {
     res.json(defaultConfig);
   } catch (error) {
     logger.error('Error getting default config:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET port availability
+router.get('/port-availability/:port', async (req, res) => {
+  try {
+    const port = parseInt(req.params.port);
+    
+    if (!isValidPort(port)) {
+      const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '3000');
+      const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '3100');
+      return res.status(400).json({ 
+        available: false,
+        error: `Port must be between ${minPort} and ${maxPort}` 
+      });
+    }
+    
+    const available = await isPortAvailable(port);
+    res.json({ 
+      port, 
+      available,
+      message: available ? 'Port is available' : 'Port is already in use'
+    });
+  } catch (error) {
+    logger.error('Error checking port availability:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET available ports in range
+router.get('/available-ports', async (req, res) => {
+  try {
+    const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '3000');
+    const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '3100');
+    const availablePorts = [];
+    
+    for (let port = minPort; port <= maxPort; port++) {
+      if (await isPortAvailable(port)) {
+        availablePorts.push(port);
+      }
+    }
+    
+    res.json({ 
+      availablePorts,
+      range: { min: minPort, max: maxPort },
+      count: availablePorts.length
+    });
+  } catch (error) {
+    logger.error('Error getting available ports:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -95,7 +159,7 @@ router.get('/:id', async (req, res) => {
 // CREATE new instance
 router.post('/', async (req, res) => {
   try {
-    const { name, description, config, templateId } = req.body;
+    const { name, description, config, templateId, port: requestedPort } = req.body;
     
     if (!name || !config) {
       return res.status(400).json({ error: 'Name and config are required' });
@@ -103,7 +167,31 @@ router.post('/', async (req, res) => {
     
     const db = getDatabase();
     const id = uuidv4();
-    const port = await getNextAvailablePort();
+    
+    // Handle port assignment
+    let port;
+    if (requestedPort) {
+      // Validate requested port
+      if (!isValidPort(requestedPort)) {
+        const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '3000');
+        const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '3100');
+        return res.status(400).json({ 
+          error: `Port must be between ${minPort} and ${maxPort}` 
+        });
+      }
+      
+      // Check if port is available
+      if (!(await isPortAvailable(requestedPort))) {
+        return res.status(400).json({ 
+          error: `Port ${requestedPort} is already in use` 
+        });
+      }
+      
+      port = requestedPort;
+    } else {
+      // Auto-assign port
+      port = await getNextAvailablePort();
+    }
     
     // Merge with template if provided
     let finalConfig = { ...defaultConfig };
@@ -137,6 +225,85 @@ router.post('/', async (req, res) => {
     res.status(201).json(instance);
   } catch (error) {
     logger.error('Error creating instance:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// UPDATE instance
+router.patch('/:id', async (req, res) => {
+  try {
+    const { name, description, config, port: requestedPort } = req.body;
+    
+    const db = getDatabase();
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const instance = result.rows[0];
+    const currentConfig = JSON.parse(instance.config);
+    
+    // Handle port change if requested
+    let port = instance.port;
+    if (requestedPort && requestedPort !== instance.port) {
+      // Validate requested port
+      if (!isValidPort(requestedPort)) {
+        const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '3000');
+        const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '3100');
+        return res.status(400).json({ 
+          error: `Port must be between ${minPort} and ${maxPort}` 
+        });
+      }
+      
+      // Check if port is available (excluding current instance)
+      const portCheck = await db.query('SELECT id FROM instances WHERE port = $1 AND id != $2', [requestedPort, instance.id]);
+      if (portCheck.rows.length > 0) {
+        return res.status(400).json({ 
+          error: `Port ${requestedPort} is already in use` 
+        });
+      }
+      
+      port = requestedPort;
+    }
+    
+    // Merge configuration changes
+    let updatedConfig = { ...currentConfig };
+    if (config) {
+      updatedConfig = { ...updatedConfig, ...config };
+      // Update port in config if changed
+      if (port !== instance.port) {
+        updatedConfig.PORT = port;
+      }
+    }
+    
+    // Update instance in database
+    await db.query(`
+      UPDATE instances 
+      SET name = COALESCE($1, name),
+          description = COALESCE($2, description),
+          port = $3,
+          config = $4,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $5
+    `, [
+      name || instance.name,
+      description !== undefined ? description : instance.description,
+      port,
+      JSON.stringify(updatedConfig),
+      instance.id
+    ]);
+    
+    const updatedResult = await db.query('SELECT * FROM instances WHERE id = $1', [instance.id]);
+    const updatedInstance = updatedResult.rows[0];
+    updatedInstance.config = JSON.parse(updatedInstance.config);
+    
+    broadcast({ type: 'instance_updated', data: updatedInstance });
+    
+    logger.info(`Instance updated: ${updatedInstance.name} (${updatedInstance.id})`);
+    res.json(updatedInstance);
+  } catch (error) {
+    logger.error('Error updating instance:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -385,14 +552,21 @@ router.get('/:id/qr', async (req, res) => {
     }
     
     const instance = result.rows[0];
+    const config = JSON.parse(instance.config);
     
     if (!instance.container_id) {
       return res.status(400).json({ error: 'Instance not running' });
     }
     
     // Get QR code from wwebjs-api instance
-    const qrUrl = `http://localhost:${instance.port}/session/qr/default`;
-    const qrResponse = await axios.get(qrUrl);
+    // Use container name for Docker networking
+    const containerName = `wwebjs-${instance.name}`;
+    const qrUrl = `http://${containerName}:3000/session/qr/default`;
+    const qrResponse = await axios.get(qrUrl, {
+      headers: {
+        'x-api-key': config.API_KEY
+      }
+    });
     
     res.json({ qr: qrResponse.data });
   } catch (error) {
@@ -412,18 +586,203 @@ router.get('/:id/session-status', async (req, res) => {
     }
     
     const instance = result.rows[0];
+    const config = JSON.parse(instance.config);
     
     if (!instance.container_id) {
       return res.json({ status: 'disconnected', message: 'Instance not running' });
     }
     
     // Get session status from wwebjs-api instance
-    const statusUrl = `http://localhost:${instance.port}/session/status/default`;
-    const statusResponse = await axios.get(statusUrl);
+    // Use container name for Docker networking
+    const containerName = `wwebjs-${instance.name}`;
+    const statusUrl = `http://${containerName}:3000/session/status/default`;
+    const statusResponse = await axios.get(statusUrl, {
+      headers: {
+        'x-api-key': config.API_KEY
+      }
+    });
     
     res.json(statusResponse.data);
   } catch (error) {
     logger.error('Error fetching session status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET all sessions for an instance
+router.get('/:id/sessions', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const instance = result.rows[0];
+    const config = JSON.parse(instance.config);
+    
+    if (!instance.container_id) {
+      return res.json({ sessions: [], message: 'Instance not running' });
+    }
+    
+    // Get all sessions from wwebjs-api instance
+    // Use container name for Docker networking
+    const containerName = `wwebjs-${instance.name}`;
+    const sessionsUrl = `http://${containerName}:3000/session/getSessions`;
+    const sessionsResponse = await axios.get(sessionsUrl, {
+      headers: {
+        'x-api-key': config.API_KEY
+      }
+    });
+    
+    // Get detailed status for each session
+    const sessions = [];
+    if (sessionsResponse.data.success && sessionsResponse.data.result) {
+      for (const sessionId of sessionsResponse.data.result) {
+        try {
+          const statusUrl = `http://${containerName}:3000/session/status/${sessionId}`;
+          const statusResponse = await axios.get(statusUrl, {
+            headers: {
+              'x-api-key': config.API_KEY
+            }
+          });
+          sessions.push({
+            id: sessionId,
+            status: statusResponse.data.success ? 'connected' : 'disconnected',
+            state: statusResponse.data.state || 'unknown',
+            message: statusResponse.data.message || ''
+          });
+        } catch (error) {
+          sessions.push({
+            id: sessionId,
+            status: 'error',
+            state: 'unknown',
+            message: 'Failed to get status'
+          });
+        }
+      }
+    }
+    
+    res.json({ sessions });
+  } catch (error) {
+    logger.error('Error fetching sessions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE a specific session
+router.delete('/:id/sessions/:sessionId', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const instance = result.rows[0];
+    const config = JSON.parse(instance.config);
+    
+    if (!instance.container_id) {
+      return res.status(400).json({ error: 'Instance not running' });
+    }
+    
+    // Terminate the session
+    // Use container name for Docker networking
+    const containerName = `wwebjs-${instance.name}`;
+    const terminateUrl = `http://${containerName}:3000/session/terminate/${req.params.sessionId}`;
+    const terminateResponse = await axios.get(terminateUrl, {
+      headers: {
+        'x-api-key': config.API_KEY
+      }
+    });
+    
+    res.json(terminateResponse.data);
+  } catch (error) {
+    logger.error('Error terminating session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE all sessions for an instance
+router.delete('/:id/sessions', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const instance = result.rows[0];
+    const config = JSON.parse(instance.config);
+    
+    if (!instance.container_id) {
+      return res.status(400).json({ error: 'Instance not running' });
+    }
+    
+    // Terminate all sessions
+    // Use container name for Docker networking
+    const containerName = `wwebjs-${instance.name}`;
+    const terminateUrl = `http://${containerName}:3000/session/terminateAll`;
+    const terminateResponse = await axios.get(terminateUrl, {
+      headers: {
+        'x-api-key': config.API_KEY
+      }
+    });
+    
+    res.json(terminateResponse.data);
+  } catch (error) {
+    logger.error('Error terminating all sessions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET resource usage for an instance
+router.get('/:id/resources', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const instance = result.rows[0];
+    
+    if (!instance.container_id) {
+      return res.json({ 
+        cpu: 0, 
+        memory: 0, 
+        memoryLimit: 0,
+        message: 'Instance not running' 
+      });
+    }
+    
+    // Get container stats
+    const stats = await getContainerStats(instance.container_id);
+    
+    // Calculate resource usage
+    const cpuUsage = stats.cpu_stats ? 
+      ((stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage) / 
+       (stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage)) * 100 : 0;
+    
+    const memoryUsage = stats.memory_stats ? 
+      (stats.memory_stats.usage / stats.memory_stats.limit) * 100 : 0;
+    
+    const memoryLimit = stats.memory_stats ? stats.memory_stats.limit : 0;
+    const memoryUsed = stats.memory_stats ? stats.memory_stats.usage : 0;
+    
+    res.json({
+      cpu: Math.round(cpuUsage * 100) / 100,
+      memory: Math.round(memoryUsage * 100) / 100,
+      memoryUsed: memoryUsed,
+      memoryLimit: memoryLimit,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('Error fetching resource usage:', error);
     res.status(500).json({ error: error.message });
   }
 });
