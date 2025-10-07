@@ -10,10 +10,36 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
     description: '',
     templateId: templates.find(t => t.is_default)?.id || '',
     config: {
-      API_KEY: '',
-      BASE_WEBHOOK_URL: '',
-      ENABLE_WEBHOOK: 'true',
+      // Application Configuration
+      PORT: '3000',
+      API_KEY: 'SET_YOUR_API_KEY_HERE',
+      BASE_WEBHOOK_URL: 'http://localhost:3000/localCallbackExample',
+      ENABLE_LOCAL_CALLBACK_EXAMPLE: 'TRUE',
+      RATE_LIMIT_MAX: '1000',
+      RATE_LIMIT_WINDOW_MS: '1000',
+      
+      // Client Configuration
+      MAX_ATTACHMENT_SIZE: '10000000',
+      SET_MESSAGES_AS_SEEN: 'TRUE',
+      DISABLED_CALLBACKS: 'message_ack|message_reaction|unread_count|message_edit|message_ciphertext|message_create',
+      WEB_VERSION: '2.2328.5',
+      WEB_VERSION_CACHE_TYPE: 'none',
+      RECOVER_SESSIONS: 'TRUE',
+      CHROME_BIN: '',
+      HEADLESS: 'TRUE',
+      RELEASE_BROWSER_LOCK: 'TRUE',
       LOG_LEVEL: 'info',
+      ENABLE_WEBHOOK: 'TRUE',
+      ENABLE_WEBSOCKET: 'FALSE',
+      AUTO_START_SESSIONS: 'TRUE',
+      
+      // Session File Storage
+      SESSIONS_PATH: './sessions',
+      ENABLE_SWAGGER_ENDPOINT: 'TRUE',
+      
+      // Reverse Proxy / Load Balancer
+      BASE_PATH: '',
+      TRUST_PROXY: 'FALSE',
     },
   })
 
@@ -93,53 +119,266 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
           <div className="border-t pt-4">
             <h3 className="font-medium mb-4">Configuration</h3>
             
-            <div className="space-y-4">
+            <div className="space-y-6">
+              {/* Core Configuration */}
               <div>
-                <label className="label">API Key</label>
-                <input
-                  type="text"
-                  value={formData.config.API_KEY}
-                  onChange={(e) => handleConfigChange('API_KEY', e.target.value)}
-                  className="input w-full"
-                  placeholder="Leave empty to auto-generate"
-                />
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Core Configuration</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">API Key</label>
+                    <input
+                      type="text"
+                      value={formData.config.API_KEY}
+                      onChange={(e) => handleConfigChange('API_KEY', e.target.value)}
+                      className="input w-full"
+                      placeholder="SET_YOUR_API_KEY_HERE"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Log Level</label>
+                    <select
+                      value={formData.config.LOG_LEVEL}
+                      onChange={(e) => handleConfigChange('LOG_LEVEL', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="error">Error</option>
+                      <option value="warn">Warn</option>
+                      <option value="info">Info</option>
+                      <option value="debug">Debug</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
+              {/* Webhook Configuration */}
               <div>
-                <label className="label">Webhook URL</label>
-                <input
-                  type="url"
-                  value={formData.config.BASE_WEBHOOK_URL}
-                  onChange={(e) => handleConfigChange('BASE_WEBHOOK_URL', e.target.value)}
-                  className="input w-full"
-                  placeholder="https://your-webhook.com/webhook"
-                />
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Webhook Configuration</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">Webhook URL</label>
+                    <input
+                      type="url"
+                      value={formData.config.BASE_WEBHOOK_URL}
+                      onChange={(e) => handleConfigChange('BASE_WEBHOOK_URL', e.target.value)}
+                      className="input w-full"
+                      placeholder="http://localhost:3000/localCallbackExample"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Enable Webhook</label>
+                    <select
+                      value={formData.config.ENABLE_WEBHOOK}
+                      onChange={(e) => handleConfigChange('ENABLE_WEBHOOK', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
+              {/* Callback Configuration */}
               <div>
-                <label className="label">Enable Webhook</label>
-                <select
-                  value={formData.config.ENABLE_WEBHOOK}
-                  onChange={(e) => handleConfigChange('ENABLE_WEBHOOK', e.target.value)}
-                  className="input w-full"
-                >
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Callback Configuration</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">Disabled Callbacks</label>
+                    <input
+                      type="text"
+                      value={formData.config.DISABLED_CALLBACKS}
+                      onChange={(e) => handleConfigChange('DISABLED_CALLBACKS', e.target.value)}
+                      className="input w-full"
+                      placeholder="message_ack|message_reaction|unread_count (separated by |)"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Callbacks to disable, separated by | (e.g., message_ack|message_reaction|unread_count)
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="label">Enable Local Callback Example</label>
+                    <select
+                      value={formData.config.ENABLE_LOCAL_CALLBACK_EXAMPLE}
+                      onChange={(e) => handleConfigChange('ENABLE_LOCAL_CALLBACK_EXAMPLE', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
+              {/* Browser Configuration */}
               <div>
-                <label className="label">Log Level</label>
-                <select
-                  value={formData.config.LOG_LEVEL}
-                  onChange={(e) => handleConfigChange('LOG_LEVEL', e.target.value)}
-                  className="input w-full"
-                >
-                  <option value="error">Error</option>
-                  <option value="warn">Warn</option>
-                  <option value="info">Info</option>
-                  <option value="debug">Debug</option>
-                </select>
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Browser Configuration</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">Headless Mode</label>
+                    <select
+                      value={formData.config.HEADLESS}
+                      onChange={(e) => handleConfigChange('HEADLESS', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="true">Yes (Headless)</option>
+                      <option value="false">No (Show Browser)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="label">Chrome Binary Path</label>
+                    <input
+                      type="text"
+                      value={formData.config.CHROME_BIN}
+                      onChange={(e) => handleConfigChange('CHROME_BIN', e.target.value)}
+                      className="input w-full"
+                      placeholder="Leave empty for default"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Web Version</label>
+                    <input
+                      type="text"
+                      value={formData.config.WEB_VERSION}
+                      onChange={(e) => handleConfigChange('WEB_VERSION', e.target.value)}
+                      className="input w-full"
+                      placeholder="Leave empty for latest"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Web Version Cache Type</label>
+                    <select
+                      value={formData.config.WEB_VERSION_CACHE_TYPE}
+                      onChange={(e) => handleConfigChange('WEB_VERSION_CACHE_TYPE', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="none">None</option>
+                      <option value="local">Local</option>
+                      <option value="remote">Remote</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Session Configuration */}
+              <div>
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Session Configuration</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">Sessions Path</label>
+                    <input
+                      type="text"
+                      value={formData.config.SESSIONS_PATH}
+                      onChange={(e) => handleConfigChange('SESSIONS_PATH', e.target.value)}
+                      className="input w-full"
+                      placeholder="./sessions"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Auto Start Sessions</label>
+                    <select
+                      value={formData.config.AUTO_START_SESSIONS}
+                      onChange={(e) => handleConfigChange('AUTO_START_SESSIONS', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="label">Recover Sessions</label>
+                    <select
+                      value={formData.config.RECOVER_SESSIONS}
+                      onChange={(e) => handleConfigChange('RECOVER_SESSIONS', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Advanced Configuration */}
+              <div>
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Advanced Configuration</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">Enable WebSocket</label>
+                    <select
+                      value={formData.config.ENABLE_WEBSOCKET}
+                      onChange={(e) => handleConfigChange('ENABLE_WEBSOCKET', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="label">Rate Limit Max</label>
+                    <input
+                      type="number"
+                      value={formData.config.RATE_LIMIT_MAX}
+                      onChange={(e) => handleConfigChange('RATE_LIMIT_MAX', e.target.value)}
+                      className="input w-full"
+                      placeholder="1000"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Rate Limit Window (ms)</label>
+                    <input
+                      type="number"
+                      value={formData.config.RATE_LIMIT_WINDOW_MS}
+                      onChange={(e) => handleConfigChange('RATE_LIMIT_WINDOW_MS', e.target.value)}
+                      className="input w-full"
+                      placeholder="1000"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Max Attachment Size (bytes)</label>
+                    <input
+                      type="number"
+                      value={formData.config.MAX_ATTACHMENT_SIZE}
+                      onChange={(e) => handleConfigChange('MAX_ATTACHMENT_SIZE', e.target.value)}
+                      className="input w-full"
+                      placeholder="10000000"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Set Messages as Seen</label>
+                    <select
+                      value={formData.config.SET_MESSAGES_AS_SEEN}
+                      onChange={(e) => handleConfigChange('SET_MESSAGES_AS_SEEN', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="label">Enable Swagger Endpoint</label>
+                    <select
+                      value={formData.config.ENABLE_SWAGGER_ENDPOINT}
+                      onChange={(e) => handleConfigChange('ENABLE_SWAGGER_ENDPOINT', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDatabase } = require('../db');
 const { getContainerStats } = require('../docker');
+const metricsCollector = require('../services/metricsCollector');
 const { logger } = require('../utils/logger');
 
 const router = express.Router();
@@ -88,19 +89,45 @@ router.post('/collect/:id', async (req, res) => {
   }
 });
 
+// GET metrics collector status
+router.get('/collector/status', (req, res) => {
+  try {
+    const status = metricsCollector.getStatus();
+    res.json(status);
+  } catch (error) {
+    logger.error('Error getting metrics collector status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST start metrics collector
+router.post('/collector/start', (req, res) => {
+  try {
+    metricsCollector.start();
+    res.json({ message: 'Metrics collector started' });
+  } catch (error) {
+    logger.error('Error starting metrics collector:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST stop metrics collector
+router.post('/collector/stop', (req, res) => {
+  try {
+    metricsCollector.stop();
+    res.json({ message: 'Metrics collector stopped' });
+  } catch (error) {
+    logger.error('Error stopping metrics collector:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // DELETE old metrics
 router.delete('/cleanup', async (req, res) => {
   try {
     const { daysToKeep = 30 } = req.query;
-    const db = getDatabase();
-    
-    const result = db.prepare(`
-      DELETE FROM metrics 
-      WHERE timestamp < datetime('now', '-${parseInt(daysToKeep)} days')
-    `).run();
-    
-    logger.info(`Cleaned up ${result.changes} old metric records`);
-    res.json({ deleted: result.changes });
+    const deletedCount = await metricsCollector.cleanupOldMetrics(parseInt(daysToKeep));
+    res.json({ message: `Cleaned up ${deletedCount} old metrics records` });
   } catch (error) {
     logger.error('Error cleaning up metrics:', error);
     res.status(500).json({ error: error.message });

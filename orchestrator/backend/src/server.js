@@ -6,6 +6,7 @@ const path = require('path');
 const { initDatabase } = require('./db');
 const { initDocker } = require('./docker');
 const { initWebSocket } = require('./websocket');
+const metricsCollector = require('./services/metricsCollector');
 const routes = require('./routes');
 const { logger } = require('./utils/logger');
 
@@ -65,9 +66,18 @@ async function start() {
     initWebSocket(server);
     logger.info('WebSocket server initialized');
 
+    // Start metrics collector if enabled
+    if (process.env.ENABLE_METRICS !== 'false') {
+      metricsCollector.start();
+      logger.info('Metrics collector started');
+    } else {
+      logger.info('Metrics collection disabled');
+    }
+
     // Graceful shutdown
     process.on('SIGTERM', () => {
       logger.info('SIGTERM received, shutting down gracefully');
+      metricsCollector.stop();
       server.close(() => {
         logger.info('Server closed');
         process.exit(0);

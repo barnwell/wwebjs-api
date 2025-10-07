@@ -15,6 +15,7 @@ const {
 const { broadcast } = require('../websocket');
 const { logger } = require('../utils/logger');
 const axios = require('axios');
+const defaultConfig = require('../config/default-instance-config');
 
 const router = express.Router();
 
@@ -95,13 +96,16 @@ router.post('/', async (req, res) => {
     const port = getNextAvailablePort();
     
     // Merge with template if provided
-    let finalConfig = { ...config };
+    let finalConfig = { ...defaultConfig };
     if (templateId) {
       const template = db.prepare('SELECT config FROM templates WHERE id = ?').get(templateId);
       if (template) {
-        finalConfig = { ...JSON.parse(template.config), ...config };
+        finalConfig = { ...finalConfig, ...JSON.parse(template.config) };
       }
     }
+    
+    // Override with user-provided config
+    finalConfig = { ...finalConfig, ...config };
     
     // Set default values
     finalConfig.PORT = finalConfig.PORT || port;
