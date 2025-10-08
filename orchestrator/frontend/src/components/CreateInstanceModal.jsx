@@ -27,6 +27,27 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
     message: ''
   })
 
+  const [nameError, setNameError] = useState('')
+
+  // Validate instance name
+  const validateInstanceName = (name) => {
+    if (!name.trim()) {
+      return 'Instance name is required'
+    }
+    
+    // Docker container name validation: only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed
+    const validNameRegex = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/
+    if (!validNameRegex.test(name)) {
+      return 'Instance name can only contain letters, numbers, underscores, dots, and hyphens. It must start with a letter or number.'
+    }
+    
+    if (name.length > 50) {
+      return 'Instance name must be 50 characters or less'
+    }
+    
+    return ''
+  }
+
   // Update form data when default config is loaded
   useEffect(() => {
     if (defaultConfig) {
@@ -54,6 +75,15 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
       toast.error('Default configuration not loaded yet. Please wait.')
       return
     }
+    
+    // Validate instance name
+    const nameValidationError = validateInstanceName(formData.name)
+    if (nameValidationError) {
+      setNameError(nameValidationError)
+      toast.error(nameValidationError)
+      return
+    }
+    setNameError('')
     
     // Validate custom port if selected
     if (formData.useCustomPort && formData.port) {
@@ -88,11 +118,11 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
 
   // Check port availability
   const checkPortAvailability = async (port) => {
-    if (!port || port < 3000 || port > 3100) {
+    if (!port || port < 1 || port > 65535) {
       setPortStatus({
         checking: false,
         available: false,
-        message: 'Port must be between 3000 and 3100'
+        message: 'Port must be between 1 and 65535'
       })
       return
     }
@@ -104,13 +134,15 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
       setPortStatus({
         checking: false,
         available: response.available,
-        message: response.message
+        message: response.message || (response.available ? 'Port is available' : 'Port is already in use')
       })
     } catch (error) {
+      // Extract error message from backend response
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to check port availability'
       setPortStatus({
         checking: false,
         available: false,
-        message: error.message
+        message: errorMessage
       })
     }
   }
@@ -177,10 +209,28 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
               type="text"
               required
               value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="input w-full"
+              onChange={(e) => {
+                const newName = e.target.value
+                setFormData({ ...formData, name: newName })
+                // Clear error when user starts typing
+                if (nameError) {
+                  setNameError('')
+                }
+              }}
+              onBlur={() => {
+                // Validate on blur
+                const error = validateInstanceName(formData.name)
+                setNameError(error)
+              }}
+              className={`input w-full ${nameError ? 'border-red-500 focus:border-red-500' : ''}`}
               placeholder="my-whatsapp-instance"
             />
+            {nameError && (
+              <p className="text-sm text-red-600 mt-1">{nameError}</p>
+            )}
+            {!nameError && formData.name && (
+              <p className="text-sm text-green-600 mt-1">✓ Valid instance name</p>
+            )}
           </div>
 
           <div>
@@ -234,8 +284,8 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
                     onChange={(e) => setFormData({ ...formData, port: e.target.value })}
                     className="input w-full"
                     placeholder="3000"
-                    min="3000"
-                    max="3100"
+                    min="1"
+                    max="65535"
                   />
                   
                   {/* Port Status Indicator */}

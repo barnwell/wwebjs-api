@@ -8,7 +8,9 @@ export function useWebSocket() {
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.hostname}:${window.location.port}/ws`
-    
+
+    console.log('Attempting WebSocket connection to:', wsUrl) // Debug log
+
     const websocket = new WebSocket(wsUrl)
 
     websocket.onopen = () => {
@@ -32,6 +34,7 @@ export function useWebSocket() {
 
     websocket.onerror = (error) => {
       console.error('WebSocket error:', error)
+      setIsConnected(false)
     }
 
     setWs(websocket)

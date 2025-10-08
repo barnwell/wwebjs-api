@@ -13,20 +13,20 @@ export default function InstanceDetails() {
   const [activeTab, setActiveTab] = useState('metrics')
   const [showEditModal, setShowEditModal] = useState(false)
 
-  const { data: instance, isLoading } = useQuery({
+  const { data: instance, isLoading, error } = useQuery({
     queryKey: ['instances', id],
     queryFn: () => instancesAPI.getById(id),
     refetchInterval: 5000,
   })
 
-  const { data: metrics = [] } = useQuery({
+  const { data: metrics = [], error: metricsError } = useQuery({
     queryKey: ['metrics', id],
     queryFn: () => metricsAPI.getByInstance(id, '1h'),
     refetchInterval: 5000,
     enabled: activeTab === 'metrics',
   })
 
-  const { data: logsData } = useQuery({
+  const { data: logsData, error: logsError } = useQuery({
     queryKey: ['logs', id],
     queryFn: () => instancesAPI.getLogs(id, 100),
     refetchInterval: 5000,
@@ -37,6 +37,17 @@ export default function InstanceDetails() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-gray-500">Loading...</div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-red-500 mb-4">Error loading instance: {error.message}</p>
+        <button onClick={() => navigate('/instances')} className="btn btn-primary">
+          Back to Instances
+        </button>
       </div>
     )
   }
@@ -168,7 +179,11 @@ export default function InstanceDetails() {
         <div className="card">
           <h2 className="text-xl font-semibold mb-6">Resource Usage (Last Hour)</h2>
           
-          {metricsData.length === 0 ? (
+          {metricsError ? (
+            <div className="text-center py-12 text-red-500">
+              Error loading metrics: {metricsError.message}
+            </div>
+          ) : metricsData.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
               No metrics data available yet
             </div>
@@ -208,7 +223,9 @@ export default function InstanceDetails() {
         <div className="card">
           <h2 className="text-xl font-semibold mb-4">Container Logs</h2>
           <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-sm overflow-x-auto max-h-[500px] overflow-y-auto">
-            {logsData?.logs ? (
+            {logsError ? (
+              <p className="text-red-400">Error loading logs: {logsError.message}</p>
+            ) : logsData?.logs ? (
               <pre className="whitespace-pre-wrap">{logsData.logs}</pre>
             ) : (
               <p className="text-gray-400">No logs available</p>

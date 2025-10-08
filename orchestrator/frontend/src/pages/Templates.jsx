@@ -9,7 +9,7 @@ export default function Templates() {
   const [editingTemplate, setEditingTemplate] = useState(null)
   const queryClient = useQueryClient()
 
-  const { data: templates = [], isLoading } = useQuery({
+  const { data: templates = [], isLoading, error } = useQuery({
     queryKey: ['templates'],
     queryFn: templatesAPI.getAll,
   })
@@ -45,6 +45,16 @@ export default function Templates() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-gray-500">Loading...</div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-red-500">
+          Error loading templates: {error.message}
+        </div>
       </div>
     )
   }

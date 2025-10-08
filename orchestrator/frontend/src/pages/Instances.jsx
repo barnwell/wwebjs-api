@@ -12,13 +12,13 @@ export default function Instances() {
   const [qrInstance, setQrInstance] = useState(null)
   const queryClient = useQueryClient()
 
-  const { data: instances = [], isLoading } = useQuery({
+  const { data: instances = [], isLoading, error } = useQuery({
     queryKey: ['instances'],
     queryFn: instancesAPI.getAll,
     refetchInterval: 5000,
   })
 
-  const { data: templates = [] } = useQuery({
+  const { data: templates = [], error: templatesError } = useQuery({
     queryKey: ['templates'],
     queryFn: templatesAPI.getAll,
   })
@@ -77,6 +77,16 @@ export default function Instances() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-gray-500">Loading...</div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-red-500">
+          Error loading instances: {error.message}
+        </div>
       </div>
     )
   }

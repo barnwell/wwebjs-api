@@ -4,13 +4,13 @@ import { instancesAPI, metricsAPI } from '../api/client'
 import { Link } from 'react-router-dom'
 
 export default function Dashboard() {
-  const { data: instances = [], isLoading } = useQuery({
+  const { data: instances = [], isLoading, error: instancesError } = useQuery({
     queryKey: ['instances'],
     queryFn: instancesAPI.getAll,
     refetchInterval: 5000,
   })
 
-  const { data: latestMetrics = [] } = useQuery({
+  const { data: latestMetrics = [], error: metricsError } = useQuery({
     queryKey: ['metrics', 'latest'],
     queryFn: metricsAPI.getLatest,
     refetchInterval: 5000,
@@ -31,6 +31,16 @@ export default function Dashboard() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-gray-500">Loading...</div>
+      </div>
+    )
+  }
+
+  if (instancesError) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-red-500">
+          Error loading instances: {instancesError.message}
+        </div>
       </div>
     )
   }

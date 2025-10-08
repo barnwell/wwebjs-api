@@ -14,10 +14,14 @@ const {
 } = require('../docker');
 const { broadcast } = require('../websocket');
 const { logger } = require('../utils/logger');
+const { authenticateToken, requireOwnershipOrAdmin } = require('../middleware/auth');
 const axios = require('axios');
 const defaultConfig = require('../config/default-instance-config');
 
 const router = express.Router();
+
+// All routes require authentication
+router.use(authenticateToken);
 
 // Helper function to get next available port
 async function getNextAvailablePort() {
@@ -40,11 +44,26 @@ async function isPortAvailable(port) {
   return result.rows.length === 0;
 }
 
+// Helper function to check instance ownership
+async function checkInstanceOwnership(instanceId, userId, userRole) {
+  if (userRole === 'admin') {
+    return true; // Admins can access all instances
+  }
+  
+  const db = getDatabase();
+  const result = await db.query('SELECT user_id FROM instances WHERE id = $1', [instanceId]);
+  
+  if (result.rows.length === 0) {
+    return false; // Instance doesn't exist
+  }
+  
+  return result.rows[0].user_id === userId;
+}
+
 // Helper function to validate port range
 function isValidPort(port) {
-  const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '3000');
-  const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '3100');
-  return port >= minPort && port <= maxPort;
+  // Allow any valid port number (1-65535)
+  return port >= 1 && port <= 65535;
 }
 
 // Helper function to build environment variables from config
@@ -74,11 +93,9 @@ router.get('/port-availability/:port', async (req, res) => {
     const port = parseInt(req.params.port);
     
     if (!isValidPort(port)) {
-      const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '3000');
-      const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '3100');
       return res.status(400).json({ 
         available: false,
-        error: `Port must be between ${minPort} and ${maxPort}` 
+        error: `Port must be between 1 and 65535` 
       });
     }
     
@@ -122,7 +139,30 @@ router.get('/available-ports', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const db = getDatabase();
-    const result = await db.query('SELECT * FROM instances ORDER BY created_at DESC');
+    let query, params;
+    
+    if (req.user.role === 'admin') {
+      // Admins can see all instances with owner information
+      query = `
+        SELECT i.*, u.username as owner_username, u.email as owner_email
+        FROM instances i
+        JOIN users u ON i.user_id = u.id
+        ORDER BY i.created_at DESC
+      `;
+      params = [];
+    } else {
+      // Regular users can only see their own instances
+      query = `
+        SELECT i.*, u.username as owner_username, u.email as owner_email
+        FROM instances i
+        JOIN users u ON i.user_id = u.id
+        WHERE i.user_id = $1
+        ORDER BY i.created_at DESC
+      `;
+      params = [req.user.id];
+    }
+    
+    const result = await db.query(query, params);
     
     // Parse JSON config for each instance
     const instances = result.rows.map(instance => ({
@@ -140,8 +180,19 @@ router.get('/', async (req, res) => {
 // GET instance by ID
 router.get('/:id', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
-    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    const result = await db.query(`
+      SELECT i.*, u.username as owner_username, u.email as owner_email
+      FROM instances i
+      JOIN users u ON i.user_id = u.id
+      WHERE i.id = $1
+    `, [req.params.id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Instance not found' });
@@ -173,10 +224,8 @@ router.post('/', async (req, res) => {
     if (requestedPort) {
       // Validate requested port
       if (!isValidPort(requestedPort)) {
-        const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '3000');
-        const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '3100');
         return res.status(400).json({ 
-          error: `Port must be between ${minPort} and ${maxPort}` 
+          error: `Port must be between 1 and 65535` 
         });
       }
       
@@ -211,11 +260,16 @@ router.post('/', async (req, res) => {
     
     // Create instance record
     await db.query(`
-      INSERT INTO instances (id, name, description, port, config, status)
-      VALUES ($1, $2, $3, $4, $5, 'stopped')
-    `, [id, name, description || '', port, JSON.stringify(finalConfig)]);
+      INSERT INTO instances (id, name, description, port, config, status, user_id)
+      VALUES ($1, $2, $3, $4, $5, 'stopped', $6)
+    `, [id, name, description || '', port, JSON.stringify(finalConfig), req.user.id]);
     
-    const instanceResult = await db.query('SELECT * FROM instances WHERE id = $1', [id]);
+    const instanceResult = await db.query(`
+      SELECT i.*, u.username as owner_username, u.email as owner_email
+      FROM instances i
+      JOIN users u ON i.user_id = u.id
+      WHERE i.id = $1
+    `, [id]);
     const instance = instanceResult.rows[0];
     instance.config = JSON.parse(instance.config);
     
@@ -232,6 +286,12 @@ router.post('/', async (req, res) => {
 // UPDATE instance
 router.patch('/:id', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const { name, description, config, port: requestedPort } = req.body;
     
     const db = getDatabase();
@@ -249,10 +309,8 @@ router.patch('/:id', async (req, res) => {
     if (requestedPort && requestedPort !== instance.port) {
       // Validate requested port
       if (!isValidPort(requestedPort)) {
-        const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '3000');
-        const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '3100');
         return res.status(400).json({ 
-          error: `Port must be between ${minPort} and ${maxPort}` 
+          error: `Port must be between 1 and 65535` 
         });
       }
       
@@ -294,7 +352,12 @@ router.patch('/:id', async (req, res) => {
       instance.id
     ]);
     
-    const updatedResult = await db.query('SELECT * FROM instances WHERE id = $1', [instance.id]);
+    const updatedResult = await db.query(`
+      SELECT i.*, u.username as owner_username, u.email as owner_email
+      FROM instances i
+      JOIN users u ON i.user_id = u.id
+      WHERE i.id = $1
+    `, [instance.id]);
     const updatedInstance = updatedResult.rows[0];
     updatedInstance.config = JSON.parse(updatedInstance.config);
     
@@ -311,6 +374,12 @@ router.patch('/:id', async (req, res) => {
 // START instance
 router.post('/:id/start', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
@@ -333,7 +402,12 @@ router.post('/:id/start', async (req, res) => {
           WHERE id = $1
         `, [instance.id]);
         
-        const updatedResult = await db.query('SELECT * FROM instances WHERE id = $1', [instance.id]);
+        const updatedResult = await db.query(`
+          SELECT i.*, u.username as owner_username, u.email as owner_email
+          FROM instances i
+          JOIN users u ON i.user_id = u.id
+          WHERE i.id = $1
+        `, [instance.id]);
         const updatedInstance = updatedResult.rows[0];
         updatedInstance.config = JSON.parse(updatedInstance.config);
         
@@ -388,6 +462,12 @@ router.post('/:id/start', async (req, res) => {
 // STOP instance
 router.post('/:id/stop', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
@@ -424,6 +504,12 @@ router.post('/:id/stop', async (req, res) => {
 // RESTART instance
 router.post('/:id/restart', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
@@ -460,6 +546,12 @@ router.post('/:id/restart', async (req, res) => {
 // DELETE instance
 router.delete('/:id', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
@@ -495,6 +587,12 @@ router.delete('/:id', async (req, res) => {
 // GET instance stats
 router.get('/:id/stats', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
@@ -519,6 +617,12 @@ router.get('/:id/stats', async (req, res) => {
 // GET instance logs
 router.get('/:id/logs', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
@@ -544,6 +648,12 @@ router.get('/:id/logs', async (req, res) => {
 // GET QR code for instance
 router.get('/:id/qr', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
@@ -578,6 +688,12 @@ router.get('/:id/qr', async (req, res) => {
 // GET session status
 router.get('/:id/session-status', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
@@ -612,6 +728,12 @@ router.get('/:id/session-status', async (req, res) => {
 // GET all sessions for an instance
 router.get('/:id/sessions', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
@@ -674,6 +796,12 @@ router.get('/:id/sessions', async (req, res) => {
 // DELETE a specific session
 router.delete('/:id/sessions/:sessionId', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
@@ -708,6 +836,12 @@ router.delete('/:id/sessions/:sessionId', async (req, res) => {
 // DELETE all sessions for an instance
 router.delete('/:id/sessions', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
@@ -742,6 +876,12 @@ router.delete('/:id/sessions', async (req, res) => {
 // GET resource usage for an instance
 router.get('/:id/resources', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     

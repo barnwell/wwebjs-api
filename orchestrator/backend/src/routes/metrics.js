@@ -3,12 +3,38 @@ const { getDatabase } = require('../db');
 const { getContainerStats } = require('../docker');
 const metricsCollector = require('../services/metricsCollector');
 const { logger } = require('../utils/logger');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
+
+// All routes require authentication
+router.use(authenticateToken);
+
+// Helper function to check instance ownership for metrics
+async function checkInstanceOwnership(instanceId, userId, userRole) {
+  if (userRole === 'admin') {
+    return true; // Admins can access all metrics
+  }
+  
+  const db = getDatabase();
+  const result = await db.query('SELECT user_id FROM instances WHERE id = $1', [instanceId]);
+  
+  if (result.rows.length === 0) {
+    return false; // Instance doesn't exist
+  }
+  
+  return result.rows[0].user_id === userId;
+}
 
 // GET metrics for an instance
 router.get('/instance/:id', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const { timeRange = '1h' } = req.query;
     
@@ -36,17 +62,35 @@ router.get('/instance/:id', async (req, res) => {
 router.get('/latest', async (req, res) => {
   try {
     const db = getDatabase();
+    let query;
     
-    const result = await db.query(`
-      SELECT m1.*
-      FROM metrics m1
-      INNER JOIN (
-        SELECT instance_id, MAX(timestamp) as max_timestamp
-        FROM metrics
-        GROUP BY instance_id
-      ) m2 ON m1.instance_id = m2.instance_id AND m1.timestamp = m2.max_timestamp
-    `);
+    if (req.user.role === 'admin') {
+      // Admins can see metrics for all instances
+      query = `
+        SELECT m1.*
+        FROM metrics m1
+        INNER JOIN (
+          SELECT instance_id, MAX(timestamp) as max_timestamp
+          FROM metrics
+          GROUP BY instance_id
+        ) m2 ON m1.instance_id = m2.instance_id AND m1.timestamp = m2.max_timestamp
+      `;
+    } else {
+      // Regular users can only see metrics for their own instances
+      query = `
+        SELECT m1.*
+        FROM metrics m1
+        INNER JOIN (
+          SELECT instance_id, MAX(timestamp) as max_timestamp
+          FROM metrics m
+          INNER JOIN instances i ON m.instance_id = i.id
+          WHERE i.user_id = '${req.user.id}'
+          GROUP BY instance_id
+        ) m2 ON m1.instance_id = m2.instance_id AND m1.timestamp = m2.max_timestamp
+      `;
+    }
     
+    const result = await db.query(query);
     res.json(result.rows);
   } catch (error) {
     logger.error('Error fetching latest metrics:', error);
@@ -57,6 +101,12 @@ router.get('/latest', async (req, res) => {
 // POST collect metrics for an instance
 router.post('/collect/:id', async (req, res) => {
   try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
     
@@ -91,8 +141,8 @@ router.post('/collect/:id', async (req, res) => {
   }
 });
 
-// GET metrics collector status
-router.get('/collector/status', (req, res) => {
+// GET metrics collector status (admin only)
+router.get('/collector/status', requireAdmin, (req, res) => {
   try {
     const status = metricsCollector.getStatus();
     res.json(status);
@@ -102,8 +152,8 @@ router.get('/collector/status', (req, res) => {
   }
 });
 
-// POST start metrics collector
-router.post('/collector/start', (req, res) => {
+// POST start metrics collector (admin only)
+router.post('/collector/start', requireAdmin, (req, res) => {
   try {
     metricsCollector.start();
     res.json({ message: 'Metrics collector started' });
@@ -113,8 +163,8 @@ router.post('/collector/start', (req, res) => {
   }
 });
 
-// POST stop metrics collector
-router.post('/collector/stop', (req, res) => {
+// POST stop metrics collector (admin only)
+router.post('/collector/stop', requireAdmin, (req, res) => {
   try {
     metricsCollector.stop();
     res.json({ message: 'Metrics collector stopped' });
@@ -124,8 +174,8 @@ router.post('/collector/stop', (req, res) => {
   }
 });
 
-// DELETE old metrics
-router.delete('/cleanup', async (req, res) => {
+// DELETE old metrics (admin only)
+router.delete('/cleanup', requireAdmin, async (req, res) => {
   try {
     const { daysToKeep = 30 } = req.query;
     const deletedCount = await metricsCollector.cleanupOldMetrics(parseInt(daysToKeep));

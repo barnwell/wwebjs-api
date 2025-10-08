@@ -1,17 +1,26 @@
 import { Link, Outlet, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Server, FileText, Settings, Activity } from 'lucide-react'
+import { LayoutDashboard, Server, FileText, Settings, Activity, Users, LogOut, User } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 
-const navItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/instances', label: 'Instances', icon: Server },
-  { path: '/templates', label: 'Templates', icon: FileText },
-  { path: '/settings', label: 'Settings', icon: Settings },
-]
-
-export default function Layout() {
+export default function Layout({ user, onLogout }) {
   const location = useLocation()
   const { isConnected } = useWebSocket()
+  
+  // Add safety check for user
+  if (!user) {
+    return <div>Loading user data...</div>
+  }
+
+  const navItems = [
+    { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { path: '/instances', label: 'Instances', icon: Server },
+    { path: '/templates', label: 'Templates', icon: FileText },
+    { path: '/profile', label: 'Profile', icon: User },
+    ...(user?.role === 'admin' ? [
+      { path: '/users', label: 'Users', icon: Users },
+      { path: '/settings', label: 'Settings', icon: Settings }
+    ] : []),
+  ]
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -47,6 +56,30 @@ export default function Layout() {
             )
           })}
         </nav>
+
+        {/* User Info */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
+              <User className="w-4 h-4 text-primary-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-gray-900 truncate">
+                {user?.username}
+              </div>
+              <div className="text-xs text-gray-500 capitalize">
+                {user?.role}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Logout
+          </button>
+        </div>
       </aside>
 
       {/* Main Content */}

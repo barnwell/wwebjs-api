@@ -29,34 +29,55 @@ async function createTables() {
   const client = await pool.connect();
   
   try {
-    // Instances table
+    // Users table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_login_at TIMESTAMP
+      )
+    `);
+
+    // Instances table (updated with user_id)
     await client.query(`
       CREATE TABLE IF NOT EXISTS instances (
         id TEXT PRIMARY KEY,
-        name TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
         description TEXT,
         port INTEGER UNIQUE NOT NULL,
         container_id TEXT,
         status TEXT DEFAULT 'stopped',
         session_status TEXT DEFAULT 'disconnected',
         config TEXT NOT NULL,
+        user_id TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_started_at TIMESTAMP,
-        last_stopped_at TIMESTAMP
+        last_stopped_at TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(name, user_id)
       )
     `);
 
-    // Templates table
+    // Templates table (updated with user_id)
     await client.query(`
       CREATE TABLE IF NOT EXISTS templates (
         id TEXT PRIMARY KEY,
-        name TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
         description TEXT,
         config TEXT NOT NULL,
         is_default INTEGER DEFAULT 0,
+        user_id TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(name, user_id)
       )
     `);
 
@@ -118,6 +139,29 @@ async function createTables() {
       process.env.ENABLE_METRICS || 'true',
       process.env.METRICS_INTERVAL || '5000'
     ]);
+
+    // Create default admin user if none exists
+    const adminCheck = await client.query('SELECT id FROM users WHERE role = $1 LIMIT 1', ['admin']);
+    if (adminCheck.rows.length === 0) {
+      const bcrypt = require('bcrypt');
+      const { v4: uuidv4 } = require('uuid');
+      
+      const defaultAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'admin123';
+      const hashedPassword = await bcrypt.hash(defaultAdminPassword, 10);
+      
+      await client.query(`
+        INSERT INTO users (id, username, email, password_hash, role)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [
+        uuidv4(),
+        'admin',
+        process.env.DEFAULT_ADMIN_EMAIL || 'admin@orchestrator.local',
+        hashedPassword,
+        'admin'
+      ]);
+      
+      logger.info('Default admin user created');
+    }
 
     logger.info('Database tables created/verified successfully');
   } catch (error) {

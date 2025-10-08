@@ -1,8 +1,14 @@
 const express = require('express');
 const { getDatabase } = require('../db');
 const { logger } = require('../utils/logger');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
+
+// All routes require authentication
+router.use(authenticateToken);
+// Settings management is admin-only
+router.use(requireAdmin);
 
 // GET all settings
 router.get('/', async (req, res) => {
