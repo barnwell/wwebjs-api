@@ -12,6 +12,12 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
     select: (response) => response.data,
   })
 
+  // Fetch port range configuration
+  const { data: portRange } = useQuery({
+    queryKey: ['port-range'],
+    queryFn: instancesAPI.getPortRange,
+  })
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -118,11 +124,11 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
 
   // Check port availability
   const checkPortAvailability = async (port) => {
-    if (!port || port < 1 || port > 65535) {
+    if (!port) {
       setPortStatus({
         checking: false,
         available: false,
-        message: 'Port must be between 1 and 65535'
+        message: 'Port is required'
       })
       return
     }
@@ -283,10 +289,15 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
                     value={formData.port}
                     onChange={(e) => setFormData({ ...formData, port: e.target.value })}
                     className="input w-full"
-                    placeholder="3000"
-                    min="1"
-                    max="65535"
+                    placeholder={portRange?.minPort?.toString() || "21000"}
+                    min={portRange?.minPort || 21000}
+                    max={portRange?.maxPort || 22000}
                   />
+                  {portRange && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Allowed range: {portRange.minPort} - {portRange.maxPort}
+                    </p>
+                  )}
                   
                   {/* Port Status Indicator */}
                   {formData.port && (

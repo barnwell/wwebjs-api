@@ -7,6 +7,12 @@ import { instancesAPI } from '../api/client'
 export default function EditInstanceModal({ instance, onClose, onSuccess }) {
   const queryClient = useQueryClient()
   
+  // Fetch port range configuration
+  const { data: portRange } = useQuery({
+    queryKey: ['port-range'],
+    queryFn: instancesAPI.getPortRange,
+  })
+  
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -22,6 +28,7 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
   })
 
   const [hasChanges, setHasChanges] = useState(false)
+  const [nameError, setNameError] = useState('')
 
   // Initialize form data when instance changes
   useEffect(() => {
@@ -52,6 +59,15 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
+    
+    // Validate instance name
+    const nameValidationError = validateInstanceName(formData.name)
+    if (nameValidationError) {
+      setNameError(nameValidationError)
+      toast.error(nameValidationError)
+      return
+    }
+    setNameError('')
     
     // Validate custom port if selected
     if (formData.useCustomPort && formData.port) {
@@ -89,13 +105,32 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
     setHasChanges(true)
   }
 
+  // Validate instance name
+  const validateInstanceName = (name) => {
+    if (!name.trim()) {
+      return 'Instance name is required'
+    }
+    
+    // Docker container name validation: only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed
+    const validNameRegex = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/
+    if (!validNameRegex.test(name)) {
+      return 'Instance name can only contain letters, numbers, underscores, dots, and hyphens. It must start with a letter or number.'
+    }
+    
+    if (name.length > 50) {
+      return 'Instance name must be 50 characters or less'
+    }
+    
+    return ''
+  }
+
   // Check port availability
   const checkPortAvailability = async (port) => {
-    if (!port || port < 3000 || port > 3100) {
+    if (!port) {
       setPortStatus({
         checking: false,
         available: false,
-        message: 'Port must be between 3000 and 3100'
+        message: 'Port is required'
       })
       return
     }
@@ -107,13 +142,15 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
       setPortStatus({
         checking: false,
         available: response.available,
-        message: response.message
+        message: response.message || (response.available ? 'Port is available' : 'Port is already in use')
       })
     } catch (error) {
+      // Extract error message from backend response
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to check port availability'
       setPortStatus({
         checking: false,
         available: false,
-        message: error.message
+        message: errorMessage
       })
     }
   }
@@ -165,10 +202,28 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
               type="text"
               required
               value={formData.name}
-              onChange={(e) => handleFieldChange('name', e.target.value)}
-              className="input w-full"
+              onChange={(e) => {
+                const newName = e.target.value
+                handleFieldChange('name', newName)
+                // Clear error when user starts typing
+                if (nameError) {
+                  setNameError('')
+                }
+              }}
+              onBlur={() => {
+                // Validate on blur
+                const error = validateInstanceName(formData.name)
+                setNameError(error)
+              }}
+              className={`input w-full ${nameError ? 'border-red-500 focus:border-red-500' : ''}`}
               placeholder="my-whatsapp-instance"
             />
+            {nameError && (
+              <p className="text-sm text-red-600 mt-1">{nameError}</p>
+            )}
+            {!nameError && formData.name && (
+              <p className="text-sm text-green-600 mt-1">✓ Valid instance name</p>
+            )}
           </div>
 
           <div>
@@ -221,10 +276,15 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
                     value={formData.port}
                     onChange={(e) => handleFieldChange('port', e.target.value)}
                     className="input w-full"
-                    placeholder="3000"
-                    min="3000"
-                    max="3100"
+                    placeholder={portRange?.minPort?.toString() || "21000"}
+                    min={portRange?.minPort || 21000}
+                    max={portRange?.maxPort || 22000}
                   />
+                  {portRange && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Allowed range: {portRange.minPort} - {portRange.maxPort}
+                    </p>
+                  )}
                   
                   {/* Port Status Indicator */}
                   {formData.port && parseInt(formData.port) !== instance.port && (
@@ -301,17 +361,6 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
                 <h4 className="font-medium text-sm text-gray-700 mb-3">Webhook Configuration</h4>
                 <div className="space-y-3">
                   <div>
-                    <label className="label">Base Webhook URL</label>
-                    <input
-                      type="url"
-                      value={formData.config.BASE_WEBHOOK_URL || ''}
-                      onChange={(e) => handleConfigChange('BASE_WEBHOOK_URL', e.target.value)}
-                      className="input w-full"
-                      placeholder="https://your-webhook-url.com"
-                    />
-                  </div>
-
-                  <div>
                     <label className="label">Enable Webhook</label>
                     <select
                       value={formData.config.ENABLE_WEBHOOK || 'true'}
@@ -322,18 +371,130 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
                       <option value="false">No</option>
                     </select>
                   </div>
+
+                  <div>
+                    <label className="label">Webhook URL</label>
+                    <input
+                      type="url"
+                      value={formData.config.BASE_WEBHOOK_URL || ''}
+                      onChange={(e) => handleConfigChange('BASE_WEBHOOK_URL', e.target.value)}
+                      className="input w-full"
+                      placeholder="https://your-webhook-endpoint.com/webhook (optional - can be set later)"
+                    />
+                    {formData.config.ENABLE_WEBHOOK === 'true' && (!formData.config.BASE_WEBHOOK_URL || formData.config.BASE_WEBHOOK_URL.trim() === '') && (
+                      <p className="text-sm text-amber-600 mt-1">
+                        ⚠️ Webhook is enabled but no URL provided. You can set a webhook URL later when starting a session.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Client Configuration */}
+              {/* Callback Configuration */}
               <div>
-                <h4 className="font-medium text-sm text-gray-700 mb-3">Client Configuration</h4>
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Callback Configuration</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">Disabled Callbacks</label>
+                    <input
+                      type="text"
+                      value={formData.config.DISABLED_CALLBACKS || ''}
+                      onChange={(e) => handleConfigChange('DISABLED_CALLBACKS', e.target.value)}
+                      className="input w-full"
+                      placeholder="message_ack|message_reaction|unread_count (separated by |)"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Callbacks to disable, separated by | (e.g., message_ack|message_reaction|unread_count)
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="label">Enable Local Callback Example</label>
+                    <select
+                      value={formData.config.ENABLE_LOCAL_CALLBACK_EXAMPLE || 'false'}
+                      onChange={(e) => handleConfigChange('ENABLE_LOCAL_CALLBACK_EXAMPLE', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Browser Configuration */}
+              <div>
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Browser Configuration</h4>
                 <div className="space-y-3">
                   <div>
                     <label className="label">Headless Mode</label>
                     <select
                       value={formData.config.HEADLESS || 'true'}
                       onChange={(e) => handleConfigChange('HEADLESS', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="true">Yes (Headless)</option>
+                      <option value="false">No (Show Browser)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="label">Chrome Binary Path</label>
+                    <input
+                      type="text"
+                      value={formData.config.CHROME_BIN || ''}
+                      onChange={(e) => handleConfigChange('CHROME_BIN', e.target.value)}
+                      className="input w-full"
+                      placeholder="Leave empty for default"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Web Version</label>
+                    <input
+                      type="text"
+                      value={formData.config.WEB_VERSION || ''}
+                      onChange={(e) => handleConfigChange('WEB_VERSION', e.target.value)}
+                      className="input w-full"
+                      placeholder="Leave empty for latest"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Web Version Cache Type</label>
+                    <select
+                      value={formData.config.WEB_VERSION_CACHE_TYPE || 'none'}
+                      onChange={(e) => handleConfigChange('WEB_VERSION_CACHE_TYPE', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="none">None</option>
+                      <option value="local">Local</option>
+                      <option value="remote">Remote</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Session Configuration */}
+              <div>
+                <h4 className="font-medium text-sm text-gray-700 mb-3">Session Configuration</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">Sessions Path</label>
+                    <input
+                      type="text"
+                      value={formData.config.SESSIONS_PATH || ''}
+                      onChange={(e) => handleConfigChange('SESSIONS_PATH', e.target.value)}
+                      className="input w-full"
+                      placeholder="./sessions"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Auto Start Sessions</label>
+                    <select
+                      value={formData.config.AUTO_START_SESSIONS || 'true'}
+                      onChange={(e) => handleConfigChange('AUTO_START_SESSIONS', e.target.value)}
                       className="input w-full"
                     >
                       <option value="true">Yes</option>
@@ -346,18 +507,6 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
                     <select
                       value={formData.config.RECOVER_SESSIONS || 'true'}
                       onChange={(e) => handleConfigChange('RECOVER_SESSIONS', e.target.value)}
-                      className="input w-full"
-                    >
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="label">Auto Start Sessions</label>
-                    <select
-                      value={formData.config.AUTO_START_SESSIONS || 'true'}
-                      onChange={(e) => handleConfigChange('AUTO_START_SESSIONS', e.target.value)}
                       className="input w-full"
                     >
                       <option value="true">Yes</option>
@@ -387,7 +536,7 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
                     <label className="label">Rate Limit Max</label>
                     <input
                       type="number"
-                      value={formData.config.RATE_LIMIT_MAX || '1000'}
+                      value={formData.config.RATE_LIMIT_MAX || ''}
                       onChange={(e) => handleConfigChange('RATE_LIMIT_MAX', e.target.value)}
                       className="input w-full"
                       placeholder="1000"
@@ -398,7 +547,7 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
                     <label className="label">Rate Limit Window (ms)</label>
                     <input
                       type="number"
-                      value={formData.config.RATE_LIMIT_WINDOW_MS || '1000'}
+                      value={formData.config.RATE_LIMIT_WINDOW_MS || ''}
                       onChange={(e) => handleConfigChange('RATE_LIMIT_WINDOW_MS', e.target.value)}
                       className="input w-full"
                       placeholder="1000"
@@ -406,14 +555,38 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
                   </div>
 
                   <div>
-                    <label className="label">Max Attachment Size</label>
+                    <label className="label">Max Attachment Size (bytes)</label>
                     <input
                       type="number"
-                      value={formData.config.MAX_ATTACHMENT_SIZE || '10000000'}
+                      value={formData.config.MAX_ATTACHMENT_SIZE || ''}
                       onChange={(e) => handleConfigChange('MAX_ATTACHMENT_SIZE', e.target.value)}
                       className="input w-full"
                       placeholder="10000000"
                     />
+                  </div>
+
+                  <div>
+                    <label className="label">Set Messages as Seen</label>
+                    <select
+                      value={formData.config.SET_MESSAGES_AS_SEEN || 'false'}
+                      onChange={(e) => handleConfigChange('SET_MESSAGES_AS_SEEN', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="label">Enable Swagger Endpoint</label>
+                    <select
+                      value={formData.config.ENABLE_SWAGGER_ENDPOINT || 'false'}
+                      onChange={(e) => handleConfigChange('ENABLE_SWAGGER_ENDPOINT', e.target.value)}
+                      className="input w-full"
+                    >
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
                   </div>
                 </div>
               </div>

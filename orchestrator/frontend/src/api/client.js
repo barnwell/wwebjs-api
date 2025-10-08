@@ -136,6 +136,10 @@ export const instancesAPI = {
     const response = await api.get(`/instances/port-availability/${port}`)
     return response.data
   },
+  getPortRange: async () => {
+    const response = await api.get('/instances/port-range')
+    return response.data
+  },
   getAvailablePorts: async () => {
     const response = await api.get('/instances/available-ports')
     return response.data

@@ -62,8 +62,11 @@ async function checkInstanceOwnership(instanceId, userId, userRole) {
 
 // Helper function to validate port range
 function isValidPort(port) {
-  // Allow any valid port number (1-65535)
-  return port >= 1 && port <= 65535;
+  const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '21000');
+  const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '22000');
+  
+  // Enforce the configured port range
+  return port >= minPort && port <= maxPort;
 }
 
 // Helper function to build environment variables from config
@@ -93,9 +96,11 @@ router.get('/port-availability/:port', async (req, res) => {
     const port = parseInt(req.params.port);
     
     if (!isValidPort(port)) {
+      const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '21000');
+      const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '22000');
       return res.status(400).json({ 
         available: false,
-        error: `Port must be between 1 and 65535` 
+        error: `Port must be between ${minPort} and ${maxPort}` 
       });
     }
     
@@ -111,11 +116,28 @@ router.get('/port-availability/:port', async (req, res) => {
   }
 });
 
+// GET port range configuration
+router.get('/port-range', async (req, res) => {
+  try {
+    const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '21000');
+    const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '22000');
+    
+    res.json({
+      minPort,
+      maxPort,
+      message: `Allowed port range: ${minPort} - ${maxPort}`
+    });
+  } catch (error) {
+    logger.error('Error getting port range:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET available ports in range
 router.get('/available-ports', async (req, res) => {
   try {
-    const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '3000');
-    const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '3100');
+    const minPort = parseInt(process.env.WWEBJS_PORT_RANGE_START || '21000');
+    const maxPort = parseInt(process.env.WWEBJS_PORT_RANGE_END || '22000');
     const availablePorts = [];
     
     for (let port = minPort; port <= maxPort; port++) {

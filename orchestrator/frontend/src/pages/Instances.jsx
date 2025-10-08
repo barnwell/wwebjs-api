@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Plus, Play, Square, RotateCw, Trash2, QrCode } from 'lucide-react'
+import { Plus, Play, Square, RotateCw, Trash2, QrCode, Edit2, User } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { instancesAPI, templatesAPI } from '../api/client'
 import CreateInstanceModal from '../components/CreateInstanceModal'
+import EditInstanceModal from '../components/EditInstanceModal'
 import QRCodeModal from '../components/QRCodeModal'
 
 export default function Instances() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [editingInstance, setEditingInstance] = useState(null)
   const [qrInstance, setQrInstance] = useState(null)
   const queryClient = useQueryClient()
 
@@ -119,9 +121,17 @@ export default function Instances() {
           {instances.map((instance) => (
             <div key={instance.id} className="card">
               <div className="flex items-start justify-between mb-4">
-                <div>
+                <div className="flex-1">
                   <h3 className="text-lg font-semibold">{instance.name}</h3>
-                  <p className="text-sm text-gray-600 mt-1">Port: {instance.port}</p>
+                  <div className="flex items-center gap-4 mt-1">
+                    <p className="text-sm text-gray-600">Port: {instance.port}</p>
+                    {instance.owner_username && (
+                      <div className="flex items-center gap-1 text-sm text-gray-600">
+                        <User className="w-3 h-3" />
+                        <span>{instance.owner_username}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="flex flex-col gap-2">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -183,6 +193,14 @@ export default function Instances() {
                   </>
                 )}
                 
+                <button
+                  onClick={() => setEditingInstance(instance)}
+                  className="btn btn-secondary flex items-center gap-1 text-sm"
+                >
+                  <Edit2 className="w-4 h-4" />
+                  Edit
+                </button>
+                
                 <Link
                   to={`/instances/${instance.id}`}
                   className="btn btn-secondary text-sm"
@@ -210,6 +228,17 @@ export default function Instances() {
           onClose={() => setIsCreateModalOpen(false)}
           onSuccess={() => {
             setIsCreateModalOpen(false)
+            queryClient.invalidateQueries(['instances'])
+          }}
+        />
+      )}
+
+      {editingInstance && (
+        <EditInstanceModal
+          instance={editingInstance}
+          onClose={() => setEditingInstance(null)}
+          onSuccess={() => {
+            setEditingInstance(null)
             queryClient.invalidateQueries(['instances'])
           }}
         />
