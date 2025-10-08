@@ -27,7 +27,7 @@ export default function Layout({ user, onLogout }) {
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 h-full w-64 bg-white border-r border-gray-200">
         <div className="p-6">
-          <h1 className="text-2xl font-bold text-primary-600">WWebJS Orchestrator</h1>
+          <h1 className="text-2xl font-bold text-primary-600">TrueSelph WhatsApp</h1>
           <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
             <Activity className={`w-4 h-4 ${isConnected ? 'text-green-500' : 'text-red-500'}`} />
             <span>{isConnected ? 'Connected' : 'Disconnected'}</span>

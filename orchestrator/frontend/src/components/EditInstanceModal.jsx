@@ -330,14 +330,18 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
                 <h4 className="font-medium text-sm text-gray-700 mb-3">Core Configuration</h4>
                 <div className="space-y-3">
                   <div>
-                    <label className="label">API Key</label>
+                    <label className="label">API Key *</label>
                     <input
                       type="text"
                       value={formData.config.API_KEY || ''}
                       onChange={(e) => handleConfigChange('API_KEY', e.target.value)}
                       className="input w-full"
                       placeholder="SET_YOUR_API_KEY_HERE"
+                      required
                     />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Required for accessing wwebjs-api endpoints (sessions, QR codes, etc.)
+                    </p>
                   </div>
 
                   <div>

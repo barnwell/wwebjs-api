@@ -913,38 +913,295 @@ router.get('/:id/resources', async (req, res) => {
     
     const instance = result.rows[0];
     
-    if (!instance.container_id) {
+    if (instance.status !== 'running') {
       return res.json({ 
         cpu: 0, 
         memory: 0, 
+        memoryUsed: 0,
         memoryLimit: 0,
         message: 'Instance not running' 
       });
     }
     
-    // Get container stats
-    const stats = await getContainerStats(instance.container_id);
+    // Get latest metrics from the database instead of calculating from Docker stats
+    const metricsResult = await db.query(`
+      SELECT cpu_usage, memory_usage, memory_limit, timestamp
+      FROM metrics 
+      WHERE instance_id = $1 
+      ORDER BY timestamp DESC 
+      LIMIT 1
+    `, [req.params.id]);
     
-    // Calculate resource usage
-    const cpuUsage = stats.cpu_stats ? 
-      ((stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage) / 
-       (stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage)) * 100 : 0;
+    if (metricsResult.rows.length === 0) {
+      // No metrics available yet, try to get basic container stats
+      if (!instance.container_id) {
+        return res.json({ 
+          cpu: 0, 
+          memory: 0, 
+          memoryUsed: 0,
+          memoryLimit: 0,
+          message: 'No metrics available yet' 
+        });
+      }
+      
+      try {
+        const stats = await getContainerStats(instance.container_id);
+        const memoryUsed = stats.memory_stats?.usage || 0;
+        const memoryLimit = stats.memory_stats?.limit || 0;
+        const memoryUsage = memoryLimit > 0 ? (memoryUsed / memoryLimit) * 100 : 0;
+        
+        return res.json({
+          cpu: 0, // CPU calculation from Docker stats is unreliable
+          memory: Math.round(memoryUsage * 100) / 100,
+          memoryUsed: memoryUsed,
+          memoryLimit: memoryLimit,
+          timestamp: new Date().toISOString(),
+          message: 'Using basic container stats (metrics collection may not be running)'
+        });
+      } catch (statsError) {
+        logger.error('Error fetching container stats:', statsError);
+        return res.json({ 
+          cpu: 0, 
+          memory: 0, 
+          memoryUsed: 0,
+          memoryLimit: 0,
+          message: 'Unable to fetch resource data' 
+        });
+      }
+    }
     
-    const memoryUsage = stats.memory_stats ? 
-      (stats.memory_stats.usage / stats.memory_stats.limit) * 100 : 0;
-    
-    const memoryLimit = stats.memory_stats ? stats.memory_stats.limit : 0;
-    const memoryUsed = stats.memory_stats ? stats.memory_stats.usage : 0;
+    const latestMetric = metricsResult.rows[0];
+    const memoryLimit = parseFloat(latestMetric.memory_limit) || 0;
+    const memoryUsagePercent = parseFloat(latestMetric.memory_usage) || 0;
+    const memoryUsed = memoryLimit > 0 ? (memoryUsagePercent / 100) * memoryLimit : 0;
     
     res.json({
-      cpu: Math.round(cpuUsage * 100) / 100,
-      memory: Math.round(memoryUsage * 100) / 100,
-      memoryUsed: memoryUsed,
-      memoryLimit: memoryLimit,
-      timestamp: new Date().toISOString()
+      cpu: parseFloat(latestMetric.cpu_usage) || 0,
+      memory: memoryUsagePercent,
+      memoryUsed: Math.round(memoryUsed),
+      memoryLimit: Math.round(memoryLimit),
+      timestamp: latestMetric.timestamp
     });
   } catch (error) {
     logger.error('Error fetching resource usage:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET session class info from wwebjs-api
+router.get('/:id/session-class-info/:sessionId', async (req, res) => {
+  try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const db = getDatabase();
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const instance = result.rows[0];
+    
+    if (instance.status !== 'running') {
+      return res.status(400).json({ error: 'Instance is not running' });
+    }
+    
+    // Parse instance config to get API key
+    const config = JSON.parse(instance.config);
+    const apiKey = config.API_KEY;
+    
+    if (!apiKey) {
+      return res.status(400).json({ error: 'API key not configured for this instance' });
+    }
+    
+    // Make request to wwebjs-api using container name for Docker networking
+    const containerName = `wwebjs-${instance.name}`;
+    const wwebjsUrl = `http://${containerName}:3000/client/getClassInfo/${req.params.sessionId}`;
+    
+    try {
+      logger.info(`Requesting session class info from: ${wwebjsUrl} with API key: ${apiKey ? 'present' : 'missing'}`);
+      
+      const response = await axios.get(wwebjsUrl, { 
+        timeout: 10000,
+        headers: {
+          'x-api-key': apiKey
+        }
+      });
+      res.json(response.data);
+    } catch (apiError) {
+      logger.error('Session class info request failed:', {
+        url: wwebjsUrl,
+        status: apiError.response?.status,
+        statusText: apiError.response?.statusText,
+        message: apiError.message
+      });
+      
+      if (apiError.response?.status === 401) {
+        res.status(401).json({ error: 'Invalid API key for wwebjs-api' });
+      } else {
+        res.status(500).json({ error: 'Failed to fetch session info from wwebjs-api' });
+      }
+    }
+  } catch (error) {
+    logger.error('Error in session class info route:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET session QR code from wwebjs-api
+router.get('/:id/session-qr/:sessionId', async (req, res) => {
+  try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const db = getDatabase();
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const instance = result.rows[0];
+    
+    if (instance.status !== 'running') {
+      return res.status(400).json({ error: 'Instance is not running' });
+    }
+    
+    // Parse instance config to get API key
+    const config = JSON.parse(instance.config);
+    const apiKey = config.API_KEY;
+    
+    if (!apiKey) {
+      return res.status(400).json({ error: 'API key not configured for this instance' });
+    }
+    
+    // Make request to wwebjs-api for QR code using container name for Docker networking
+    const containerName = `wwebjs-${instance.name}`;
+    const wwebjsUrl = `http://${containerName}:3000/session/qr/${req.params.sessionId}/image`;
+    
+    try {
+      logger.info(`Requesting QR code from: ${wwebjsUrl} with API key: ${apiKey ? 'present' : 'missing'}`);
+      
+      const response = await axios.get(wwebjsUrl, { 
+        timeout: 10000,
+        responseType: 'arraybuffer',
+        headers: {
+          'x-api-key': apiKey
+        }
+      });
+      
+      // Return the QR code image
+      res.set('Content-Type', 'image/png');
+      res.send(response.data);
+    } catch (apiError) {
+      logger.error('QR code request failed:', {
+        url: wwebjsUrl,
+        status: apiError.response?.status,
+        statusText: apiError.response?.statusText,
+        data: apiError.response?.data?.toString(),
+        message: apiError.message
+      });
+      
+      if (apiError.response?.status === 404) {
+        res.status(404).json({ error: 'QR code not available for this session' });
+      } else if (apiError.response?.status === 401) {
+        res.status(401).json({ error: 'Invalid API key for wwebjs-api' });
+      } else {
+        res.status(500).json({ error: 'Failed to fetch QR code from wwebjs-api' });
+      }
+    }
+  } catch (error) {
+    logger.error('Error in session QR route:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Debug endpoint to test wwebjs-api connectivity
+router.get('/:id/debug-connectivity', async (req, res) => {
+  try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const db = getDatabase();
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const instance = result.rows[0];
+    const config = JSON.parse(instance.config);
+    const containerName = `wwebjs-${instance.name}`;
+    
+    const tests = [];
+    
+    // Test 1: Container name connectivity
+    try {
+      const containerUrl = `http://${containerName}:3000/health`;
+      const containerResponse = await axios.get(containerUrl, { 
+        timeout: 5000,
+        headers: { 'x-api-key': config.API_KEY }
+      });
+      tests.push({ 
+        test: 'Container name connectivity', 
+        url: containerUrl,
+        status: 'success', 
+        response: containerResponse.status 
+      });
+    } catch (error) {
+      tests.push({ 
+        test: 'Container name connectivity', 
+        url: `http://${containerName}:3000/health`,
+        status: 'failed', 
+        error: error.message 
+      });
+    }
+    
+    // Test 2: Localhost connectivity
+    try {
+      const localhostUrl = `http://localhost:${instance.port}/health`;
+      const localhostResponse = await axios.get(localhostUrl, { 
+        timeout: 5000,
+        headers: { 'x-api-key': config.API_KEY }
+      });
+      tests.push({ 
+        test: 'Localhost connectivity', 
+        url: localhostUrl,
+        status: 'success', 
+        response: localhostResponse.status 
+      });
+    } catch (error) {
+      tests.push({ 
+        test: 'Localhost connectivity', 
+        url: `http://localhost:${instance.port}/health`,
+        status: 'failed', 
+        error: error.message 
+      });
+    }
+    
+    res.json({
+      instance: {
+        id: instance.id,
+        name: instance.name,
+        port: instance.port,
+        status: instance.status,
+        containerName: containerName,
+        hasApiKey: !!config.API_KEY
+      },
+      tests
+    });
+  } catch (error) {
+    logger.error('Error in debug connectivity route:', error);
     res.status(500).json({ error: error.message });
   }
 });

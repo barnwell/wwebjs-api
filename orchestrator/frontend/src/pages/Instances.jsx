@@ -1,17 +1,15 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Plus, Play, Square, RotateCw, Trash2, QrCode, Edit2, User } from 'lucide-react'
+import { Plus, Play, Square, RotateCw, Trash2, Edit2, User } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { instancesAPI, templatesAPI } from '../api/client'
 import CreateInstanceModal from '../components/CreateInstanceModal'
 import EditInstanceModal from '../components/EditInstanceModal'
-import QRCodeModal from '../components/QRCodeModal'
 
 export default function Instances() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [editingInstance, setEditingInstance] = useState(null)
-  const [qrInstance, setQrInstance] = useState(null)
   const queryClient = useQueryClient()
 
   const { data: instances = [], isLoading, error } = useQuery({
@@ -183,13 +181,6 @@ export default function Instances() {
                       <RotateCw className="w-4 h-4" />
                       Restart
                     </button>
-                    <button
-                      onClick={() => setQrInstance(instance)}
-                      className="btn btn-secondary flex items-center gap-1 text-sm"
-                    >
-                      <QrCode className="w-4 h-4" />
-                      QR
-                    </button>
                   </>
                 )}
                 
@@ -244,12 +235,7 @@ export default function Instances() {
         />
       )}
 
-      {qrInstance && (
-        <QRCodeModal
-          instance={qrInstance}
-          onClose={() => setQrInstance(null)}
-        />
-      )}
+
     </div>
   )
 }

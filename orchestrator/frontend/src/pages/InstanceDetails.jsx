@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Activity, Terminal, Settings as SettingsIcon, Users, Edit } from 'lucide-react'
+import { ArrowLeft, Activity, Terminal, Settings as SettingsIcon, Users, Edit, Cpu, HardDrive, Loader } from 'lucide-react'
 import { instancesAPI, metricsAPI } from '../api/client'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import SessionManagement from '../components/SessionManagement'
@@ -13,6 +13,14 @@ export default function InstanceDetails() {
   const [activeTab, setActiveTab] = useState('metrics')
   const [showEditModal, setShowEditModal] = useState(false)
 
+  const formatBytes = (bytes) => {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
   const { data: instance, isLoading, error } = useQuery({
     queryKey: ['instances', id],
     queryFn: () => instancesAPI.getById(id),
@@ -22,6 +30,14 @@ export default function InstanceDetails() {
   const { data: metrics = [], error: metricsError } = useQuery({
     queryKey: ['metrics', id],
     queryFn: () => metricsAPI.getByInstance(id, '1h'),
+    refetchInterval: 5000,
+    enabled: activeTab === 'metrics',
+  })
+
+  // Fetch resource usage for metrics tab
+  const { data: resourcesData, isLoading: resourcesLoading } = useQuery({
+    queryKey: ['resources', id],
+    queryFn: () => instancesAPI.getResources(id),
     refetchInterval: 5000,
     enabled: activeTab === 'metrics',
   })
@@ -96,20 +112,18 @@ export default function InstanceDetails() {
               Edit Instance
             </button>
             <div className="flex flex-col gap-2">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              instance.status === 'running'
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${instance.status === 'running'
                 ? 'bg-green-100 text-green-700'
                 : 'bg-gray-100 text-gray-700'
-            }`}>
-              {instance.status}
-            </span>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              instance.session_status === 'connected'
+                }`}>
+                {instance.status}
+              </span>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${instance.session_status === 'connected'
                 ? 'bg-blue-100 text-blue-700'
                 : 'bg-yellow-100 text-yellow-700'
-            }`}>
-              {instance.session_status || 'disconnected'}
-            </span>
+                }`}>
+                {instance.session_status || 'disconnected'}
+              </span>
             </div>
           </div>
         </div>
@@ -134,7 +148,7 @@ export default function InstanceDetails() {
           <div>
             <p className="text-sm text-gray-600">Last Started</p>
             <p className="text-lg font-semibold">
-              {instance.last_started_at 
+              {instance.last_started_at
                 ? new Date(instance.last_started_at).toLocaleString()
                 : 'Never'}
             </p>
@@ -156,11 +170,10 @@ export default function InstanceDetails() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-primary-600 text-primary-600 font-medium'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
+                className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors ${activeTab === tab.id
+                  ? 'border-primary-600 text-primary-600 font-medium'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                  }`}
               >
                 <Icon className="w-5 h-5" />
                 {tab.label}
@@ -176,46 +189,103 @@ export default function InstanceDetails() {
       )}
 
       {activeTab === 'metrics' && (
-        <div className="card">
-          <h2 className="text-xl font-semibold mb-6">Resource Usage (Last Hour)</h2>
-          
-          {metricsError ? (
-            <div className="text-center py-12 text-red-500">
-              Error loading metrics: {metricsError.message}
-            </div>
-          ) : metricsData.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              No metrics data available yet
-            </div>
-          ) : (
-            <>
-              <div className="mb-8">
-                <h3 className="text-sm font-medium text-gray-700 mb-4">CPU Usage (%)</h3>
-                <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={metricsData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="cpu" stroke="#3b82f6" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+        <div className="space-y-6">
+          {/* Current Resource Usage */}
+          <div className="card">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Cpu className="w-5 h-5" />
+              Current Resource Usage
+            </h3>
 
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-4">Memory Usage (MB)</h3>
-                <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={metricsData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="memory" stroke="#10b981" />
-                  </LineChart>
-                </ResponsiveContainer>
+            {resourcesLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader className="w-6 h-6 animate-spin text-blue-500" />
+                <span className="ml-2">Loading resource usage...</span>
               </div>
-            </>
-          )}
+            ) : resourcesData ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Cpu className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-800">CPU Usage</span>
+                  </div>
+                  <div className="text-2xl font-bold text-blue-900">
+                    {resourcesData.cpu || 0}%
+                  </div>
+                </div>
+
+                <div className="bg-green-50 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <HardDrive className="w-4 h-4 text-green-600" />
+                    <span className="text-sm font-medium text-green-800">Memory Usage</span>
+                  </div>
+                  <div className="text-2xl font-bold text-green-900">
+                    {resourcesData.memory || 0}%
+                  </div>
+                  <div className="text-sm text-green-700">
+                    {formatBytes(resourcesData.memoryUsed || 0)} / {formatBytes(resourcesData.memoryLimit || 0)}
+                  </div>
+                </div>
+
+                <div className="bg-purple-50 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Users className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm font-medium text-purple-800">Container Status</span>
+                  </div>
+                  <div className="text-lg font-bold text-purple-900">
+                    {instance.status}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                No resource data available
+              </div>
+            )}
+          </div>
+
+          {/* Historical Metrics */}
+          <div className="card">
+            <h2 className="text-xl font-semibold mb-6">Historical Metrics (Last Hour)</h2>
+
+            {metricsError ? (
+              <div className="text-center py-12 text-red-500">
+                Error loading metrics: {metricsError.message}
+              </div>
+            ) : metricsData.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                No historical metrics data available yet
+              </div>
+            ) : (
+              <>
+                <div className="mb-8">
+                  <h3 className="text-sm font-medium text-gray-700 mb-4">CPU Usage (%)</h3>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={metricsData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="time" />
+                      <YAxis />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="cpu" stroke="#3b82f6" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 mb-4">Memory Usage (MB)</h3>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={metricsData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="time" />
+                      <YAxis />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="memory" stroke="#10b981" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 

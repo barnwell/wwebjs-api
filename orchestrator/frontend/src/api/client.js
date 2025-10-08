@@ -127,6 +127,15 @@ export const instancesAPI = {
     const response = await api.delete(`/instances/${id}/sessions`)
     return response.data
   },
+  // Session info from wwebjs-api
+  getSessionClassInfo: async (instanceId, sessionId) => {
+    const response = await api.get(`/instances/${instanceId}/session-class-info/${sessionId}`)
+    return response.data
+  },
+  getSessionQR: async (instanceId, sessionId) => {
+    const response = await api.get(`/instances/${instanceId}/session-qr/${sessionId}`)
+    return response.data
+  },
   getResources: async (id) => {
     const response = await api.get(`/instances/${id}/resources`)
     return response.data
