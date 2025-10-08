@@ -71,9 +71,18 @@ async function testBackend() {
               headers: { Authorization: `Bearer ${token}` },
               responseType: 'arraybuffer'
             });
-            console.log('✅ Session QR code endpoint working');
+            console.log('✅ Session QR code endpoint working, received', qrResponse.data.byteLength, 'bytes');
           } catch (qrError) {
-            console.log('ℹ️ Session QR code:', qrError.response?.data?.error || 'Not available');
+            console.log('ℹ️ Session QR code error:', qrError.response?.status, qrError.response?.statusText);
+            if (qrError.response?.data) {
+              try {
+                const errorText = Buffer.from(qrError.response.data).toString();
+                const errorJson = JSON.parse(errorText);
+                console.log('   Error details:', errorJson.error);
+              } catch (parseError) {
+                console.log('   Raw error data length:', qrError.response.data.byteLength);
+              }
+            }
           }
         }
         

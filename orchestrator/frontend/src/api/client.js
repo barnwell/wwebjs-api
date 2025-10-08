@@ -133,7 +133,9 @@ export const instancesAPI = {
     return response.data
   },
   getSessionQR: async (instanceId, sessionId) => {
-    const response = await api.get(`/instances/${instanceId}/session-qr/${sessionId}`)
+    const response = await api.get(`/instances/${instanceId}/session-qr/${sessionId}`, {
+      responseType: 'blob'
+    })
     return response.data
   },
   getResources: async (id) => {

@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
-  Trash2, 
-  RefreshCw, 
-  Users, 
+import {
+  Trash2,
+  RefreshCw,
+  Users,
   AlertTriangle,
   CheckCircle,
   XCircle,
@@ -31,18 +31,20 @@ export default function SessionManagement({ instanceId }) {
     queryKey: ['session-class-infos', instanceId],
     queryFn: async () => {
       if (!sessionsData?.sessions) return {}
-      
+
       const connectedSessions = sessionsData.sessions.filter(s => s.status === 'connected')
       const classInfoPromises = connectedSessions.map(async (session) => {
         try {
-          const info = await instancesAPI.getSessionClassInfo(instanceId, session.id)
+          const response = await instancesAPI.getSessionClassInfo(instanceId, session.id)
+          // Handle the response structure: { success: true, sessionInfo: { ... } }
+          const info = response.success ? response.sessionInfo : response
           return { sessionId: session.id, info }
         } catch (error) {
           console.error(`Failed to fetch class info for session ${session.id}:`, error)
           return { sessionId: session.id, info: null }
         }
       })
-      
+
       const results = await Promise.all(classInfoPromises)
       return results.reduce((acc, { sessionId, info }) => {
         acc[sessionId] = info
@@ -161,7 +163,7 @@ export default function SessionManagement({ instanceId }) {
             {sessionsData.sessions.map((session) => {
               const classInfo = sessionClassInfos[session.id]
               const isConnected = session.status === 'connected'
-              
+
               return (
                 <div
                   key={session.id}
@@ -175,7 +177,7 @@ export default function SessionManagement({ instanceId }) {
                         <div className="text-sm text-gray-500 mb-2">
                           State: {session.state || 'unknown'}
                         </div>
-                        
+
                         {/* Show user info for connected sessions */}
                         {isConnected && classInfo && (
                           <div className="space-y-1">
@@ -197,7 +199,7 @@ export default function SessionManagement({ instanceId }) {
                             )}
                           </div>
                         )}
-                        
+
                         {session.message && (
                           <div className="mt-2 text-sm text-gray-600">
                             {session.message}
@@ -205,12 +207,12 @@ export default function SessionManagement({ instanceId }) {
                         )}
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center gap-3">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(session.status)}`}>
                         {session.status}
                       </span>
-                      
+
                       {/* Show QR code button for disconnected sessions */}
                       {!isConnected && (
                         <button
@@ -221,7 +223,7 @@ export default function SessionManagement({ instanceId }) {
                           <QrCode className="w-4 h-4" />
                         </button>
                       )}
-                      
+
                       <button
                         onClick={() => handleDeleteSession(session.id)}
                         className="text-red-600 hover:text-red-800 p-1"
@@ -260,9 +262,49 @@ export default function SessionManagement({ instanceId }) {
 // QR Code Modal Component
 function QRCodeModal({ instanceId, sessionId, onClose }) {
   const [qrError, setQrError] = useState(null)
-  
-  const qrImageUrl = `/api/instances/${instanceId}/session-qr/${sessionId}`
-  
+  const [qrImageData, setQrImageData] = useState(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Fetch QR code with proper authentication
+  useEffect(() => {
+    const fetchQRCode = async () => {
+      try {
+        setIsLoading(true)
+        setQrError(null)
+
+        const token = localStorage.getItem('token')
+        const response = await fetch(`/api/instances/${instanceId}/session-qr/${sessionId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || `HTTP ${response.status}`)
+        }
+
+        const blob = await response.blob()
+        const imageUrl = URL.createObjectURL(blob)
+        setQrImageData(imageUrl)
+      } catch (error) {
+        console.error('Failed to fetch QR code:', error)
+        setQrError(error.message)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchQRCode()
+
+    // Cleanup object URL when component unmounts
+    return () => {
+      if (qrImageData) {
+        URL.revokeObjectURL(qrImageData)
+      }
+    }
+  }, [instanceId, sessionId])
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg max-w-md w-full p-6">
@@ -275,40 +317,94 @@ function QRCodeModal({ instanceId, sessionId, onClose }) {
             <XCircle className="w-6 h-6" />
           </button>
         </div>
-        
+
         <div className="text-center">
           <p className="text-sm text-gray-600 mb-4">
             Scan this QR code with WhatsApp to connect the session
           </p>
-          
+
           <div className="bg-gray-100 rounded-lg p-4 mb-4">
-            {qrError ? (
+            {isLoading ? (
+              <div className="text-center py-8">
+                <Loader className="w-8 h-8 animate-spin text-blue-500 mx-auto mb-2" />
+                <p className="text-sm text-gray-600">Loading QR code...</p>
+              </div>
+            ) : qrError ? (
               <div className="text-center py-8">
                 <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto mb-2" />
                 <p className="text-sm text-gray-600 mb-2">
                   QR code not available.
                 </p>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-500 mb-2">
+                  {qrError}
+                </p>
+                <p className="text-xs text-gray-400">
                   Possible reasons: Session already connected, API key not configured, or instance not running.
                 </p>
               </div>
-            ) : (
+            ) : qrImageData ? (
               <img
-                src={qrImageUrl}
+                src={qrImageData}
                 alt="WhatsApp QR Code"
                 className="mx-auto max-w-full h-auto"
-                onError={() => setQrError(true)}
-                onLoad={() => setQrError(false)}
               />
+            ) : (
+              <div className="text-center py-8">
+                <AlertTriangle className="w-12 h-12 text-gray-500 mx-auto mb-2" />
+                <p className="text-sm text-gray-600">No QR code data available</p>
+              </div>
             )}
           </div>
-          
-          <button
-            onClick={onClose}
-            className="btn btn-primary w-full"
-          >
-            Close
-          </button>
+
+          <div className="flex gap-2">
+            {qrError && (
+              <button
+                onClick={() => {
+                  setQrError(null)
+                  setIsLoading(true)
+                  // Trigger re-fetch by updating a dependency
+                  const fetchQRCode = async () => {
+                    try {
+                      setIsLoading(true)
+                      setQrError(null)
+
+                      const token = localStorage.getItem('token')
+                      const response = await fetch(`/api/instances/${instanceId}/session-qr/${sessionId}`, {
+                        headers: {
+                          'Authorization': `Bearer ${token}`
+                        }
+                      })
+
+                      if (!response.ok) {
+                        const errorData = await response.json()
+                        throw new Error(errorData.error || `HTTP ${response.status}`)
+                      }
+
+                      const blob = await response.blob()
+                      const imageUrl = URL.createObjectURL(blob)
+                      setQrImageData(imageUrl)
+                    } catch (error) {
+                      console.error('Failed to fetch QR code:', error)
+                      setQrError(error.message)
+                    } finally {
+                      setIsLoading(false)
+                    }
+                  }
+                  fetchQRCode()
+                }}
+                className="btn btn-secondary flex-1"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Loading...' : 'Retry'}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="btn btn-primary flex-1"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>

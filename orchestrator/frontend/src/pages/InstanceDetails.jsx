@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Activity, Terminal, Settings as SettingsIcon, Users, Edit, Cpu, HardDrive, Loader } from 'lucide-react'
+import { ArrowLeft, Activity, Terminal, Settings as SettingsIcon, Users, Edit, Cpu, HardDrive, Loader, Eye, EyeOff, Key } from 'lucide-react'
 import { instancesAPI, metricsAPI } from '../api/client'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import toast from 'react-hot-toast'
 import SessionManagement from '../components/SessionManagement'
 import EditInstanceModal from '../components/EditInstanceModal'
 
@@ -12,6 +13,7 @@ export default function InstanceDetails() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('metrics')
   const [showEditModal, setShowEditModal] = useState(false)
+  const [showApiKey, setShowApiKey] = useState(false)
 
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 Bytes'
@@ -305,17 +307,91 @@ export default function InstanceDetails() {
       )}
 
       {activeTab === 'config' && (
-        <div className="card">
-          <h2 className="text-xl font-semibold mb-4">Configuration</h2>
-          <div className="space-y-4">
-            {Object.entries(instance.config).map(([key, value]) => (
-              <div key={key} className="border-b border-gray-200 pb-3">
-                <p className="text-sm font-medium text-gray-700">{key}</p>
-                <p className="text-gray-900 mt-1 font-mono text-sm">
-                  {key.includes('KEY') || key.includes('SECRET') ? '••••••••' : value}
-                </p>
+        <div className="space-y-6">
+          {/* API Key Section */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Key className="w-5 h-5" />
+                API Key
+              </h3>
+              <button
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="btn btn-secondary flex items-center gap-2"
+              >
+                {showApiKey ? (
+                  <>
+                    <EyeOff className="w-4 h-4" />
+                    Hide
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-4 h-4" />
+                    Show
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-700 mb-1">Current API Key</p>
+                  <div className="font-mono text-sm bg-white border rounded px-3 py-2">
+                    {showApiKey ? (
+                      <span className="text-gray-900">
+                        {instance.config.API_KEY || 'Not configured'}
+                      </span>
+                    ) : (
+                      <span className="text-gray-500">
+                        {instance.config.API_KEY ? '••••••••••••••••••••••••••••••••' : 'Not configured'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {showApiKey && instance.config.API_KEY && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(instance.config.API_KEY)
+                        toast.success('API key copied to clipboard')
+                      } catch (error) {
+                        toast.error('Failed to copy API key')
+                      }
+                    }}
+                    className="btn btn-secondary text-sm"
+                    title="Copy to clipboard"
+                  >
+                    Copy
+                  </button>
+                )}
               </div>
-            ))}
+              <div className="flex items-center justify-between mt-2">
+                <p className="text-xs text-gray-500">
+                  This API key is used to authenticate requests to the wwebjs-api instance.
+                </p>
+                {!instance.config.API_KEY && (
+                  <span className="text-xs text-red-500 font-medium">
+                    ⚠️ Not configured
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Configuration Section */}
+          <div className="card">
+            <h2 className="text-xl font-semibold mb-4">Configuration</h2>
+            <div className="space-y-4">
+              {Object.entries(instance.config).map(([key, value]) => (
+                <div key={key} className="border-b border-gray-200 pb-3">
+                  <p className="text-sm font-medium text-gray-700">{key}</p>
+                  <p className="text-gray-900 mt-1 font-mono text-sm">
+                    {key.includes('KEY') || key.includes('SECRET') ? '••••••••' : value}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
