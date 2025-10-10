@@ -9,11 +9,13 @@
     "swagger": "node swagger.js"
   },
   "dependencies": {
-    "axios": "^1.11.0",
+    "axios": "^1.12.2",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.1",
-    "pino": "^9.9.4",
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "pino": "^9.13.1",
     "puppeteer": "^24.23.0",
     "qr-image": "^3.2.0",
     "qrcode-terminal": "^0.12.0",
@@ -22,19 +24,20 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
-    "eslint": "^8.38.0",
-    "eslint-config-standard": "^17.0.0",
-    "eslint-plugin-import": "^2.27.5",
+    "eslint": "^8.57.1",
+    "eslint-config-standard": "^17.1.0",
+    "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-n": "^15.7.0",
-    "eslint-plugin-promise": "^6.1.1",
+    "eslint-plugin-promise": "^6.6.0",
     "jest": "^29.7.0",
-    "supertest": "^6.3.3",
+    "supertest": "^6.3.4",
     "swagger-autogen": "^2.23.7"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
       "@scarf/scarf",
-      "puppeteer"
+      "puppeteer",
+      "ffmpeg-static"
     ]
   },
   "keywords": [

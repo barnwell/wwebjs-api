@@ -1,6 +1,7 @@
 const { MessageMedia, Location, Poll } = require('whatsapp-web.js')
 const { sessions } = require('../sessions')
 const { sendErrorResponse } = require('../utils')
+const { convertToOpus, needsConversion } = require('../audioConverter')
 
 /**
  * Send a message to a chat using the WhatsApp API
@@ -72,21 +73,70 @@ const sendMessage = async (req, res) => {
     switch (contentType) {
       case 'string':
         if (sendOptions?.media) {
-          const { mimetype, data, filename = null, filesize = null } = sendOptions.media
+          let { mimetype, data, filename = null, filesize = null } = sendOptions.media
           if (!mimetype || !data) {
             return sendErrorResponse(res, 400, 'invalid media options')
           }
+          
+          // Auto-convert audio to opus format if sendAudioAsVoice is enabled
+          if (sendOptions.sendAudioAsVoice && mimetype && mimetype.startsWith('audio/')) {
+            if (needsConversion(mimetype)) {
+              try {
+                data = await convertToOpus(data, mimetype)
+                mimetype = 'audio/ogg; codecs=opus'
+                filename = filename ? filename.replace(/\.[^.]+$/, '.ogg') : 'voice.ogg'
+                filesize = null // Let WhatsApp calculate the new size
+              } catch (conversionError) {
+                return sendErrorResponse(res, 500, `Audio conversion failed: ${conversionError.message}`)
+              }
+            }
+          }
+          
           sendOptions.media = new MessageMedia(mimetype, data, filename, filesize)
         }
         messageOut = await client.sendMessage(chatId, content, sendOptions)
         break
       case 'MessageMediaFromURL': {
-        const messageMediaFromURL = await MessageMedia.fromUrl(content, { unsafeMime: true, ...mediaFromURLOptions })
+        let messageMediaFromURL = await MessageMedia.fromUrl(content, { unsafeMime: true, ...mediaFromURLOptions })
+        
+        // Auto-convert audio to opus format if sendAudioAsVoice is enabled
+        if (sendOptions.sendAudioAsVoice && messageMediaFromURL.mimetype && messageMediaFromURL.mimetype.startsWith('audio/')) {
+          if (needsConversion(messageMediaFromURL.mimetype)) {
+            try {
+              const convertedData = await convertToOpus(messageMediaFromURL.data, messageMediaFromURL.mimetype)
+              messageMediaFromURL = new MessageMedia(
+                'audio/ogg; codecs=opus',
+                convertedData,
+                messageMediaFromURL.filename ? messageMediaFromURL.filename.replace(/\.[^.]+$/, '.ogg') : 'voice.ogg',
+                null
+              )
+            } catch (conversionError) {
+              return sendErrorResponse(res, 500, `Audio conversion failed: ${conversionError.message}`)
+            }
+          }
+        }
+        
         messageOut = await client.sendMessage(chatId, messageMediaFromURL, sendOptions)
         break
       }
       case 'MessageMedia': {
-        const messageMedia = new MessageMedia(content.mimetype, content.data, content.filename, content.filesize)
+        let { mimetype, data, filename, filesize } = content
+        
+        // Auto-convert audio to opus format if sendAudioAsVoice is enabled
+        if (sendOptions.sendAudioAsVoice && mimetype && mimetype.startsWith('audio/')) {
+          if (needsConversion(mimetype)) {
+            try {
+              data = await convertToOpus(data, mimetype)
+              mimetype = 'audio/ogg; codecs=opus'
+              filename = filename ? filename.replace(/\.[^.]+$/, '.ogg') : 'voice.ogg'
+              filesize = null // Let WhatsApp calculate the new size
+            } catch (conversionError) {
+              return sendErrorResponse(res, 500, `Audio conversion failed: ${conversionError.message}`)
+            }
+          }
+        }
+        
+        const messageMedia = new MessageMedia(mimetype, data, filename, filesize)
         messageOut = await client.sendMessage(chatId, messageMedia, sendOptions)
         break
       }
