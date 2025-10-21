@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Activity, Terminal, Settings as SettingsIcon, Users, Edit, Cpu, HardDrive, Loader, Eye, EyeOff, Key, Download } from 'lucide-react'
@@ -15,6 +15,7 @@ export default function InstanceDetails() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
   const [isDownloadingBackup, setIsDownloadingBackup] = useState(false)
+  const [logs, setLogs] = useState('')
 
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 Bytes'
@@ -76,6 +77,17 @@ export default function InstanceDetails() {
     refetchInterval: 5000,
     enabled: activeTab === 'logs',
   })
+
+  // Update logs state when data changes
+  useEffect(() => {
+    if (logsData?.logs) {
+      setLogs(logsData.logs)
+    }
+  }, [logsData])
+
+  const handleClearLogs = () => {
+    setLogs('')
+  }
 
   if (isLoading) {
     return (
@@ -145,15 +157,22 @@ export default function InstanceDetails() {
               className="btn btn-primary flex items-center gap-2"
             >
               <Download className="w-4 h-4" />
-              {isDownloadingBackup ? 'Creating Backup...' : 'Download Backup'}
+              {isDownloadingBackup ? 'Creating Backup...' : 'Backup Sessions'}
             </button>
             <div className="flex flex-col gap-2">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${instance.status === 'running'
-                ? 'bg-green-100 text-green-700'
-                : 'bg-gray-100 text-gray-700'
-                }`}>
-                {instance.status}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${instance.status === 'running'
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-gray-100 text-gray-700'
+                  }`}>
+                  {instance.status}
+                </span>
+                {instance.status === 'running' && resourcesData && (
+                  <span className="text-xs text-gray-600">
+                    Memory: {formatBytes(resourcesData.memoryUsed || 0)} / {formatBytes(resourcesData.memoryLimit || 0)}
+                  </span>
+                )}
+              </div>
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${instance.session_status === 'connected'
                 ? 'bg-blue-100 text-blue-700'
                 : 'bg-yellow-100 text-yellow-700'
@@ -226,60 +245,6 @@ export default function InstanceDetails() {
 
       {activeTab === 'metrics' && (
         <div className="space-y-6">
-          {/* Current Resource Usage */}
-          <div className="card">
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <Cpu className="w-5 h-5" />
-              Current Resource Usage
-            </h3>
-
-            {resourcesLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader className="w-6 h-6 animate-spin text-blue-500" />
-                <span className="ml-2">Loading resource usage...</span>
-              </div>
-            ) : resourcesData ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-blue-50 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Cpu className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-800">CPU Usage</span>
-                  </div>
-                  <div className="text-2xl font-bold text-blue-900">
-                    {resourcesData.cpu || 0}%
-                  </div>
-                </div>
-
-                <div className="bg-green-50 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <HardDrive className="w-4 h-4 text-green-600" />
-                    <span className="text-sm font-medium text-green-800">Memory Usage</span>
-                  </div>
-                  <div className="text-2xl font-bold text-green-900">
-                    {formatBytes(resourcesData.memoryUsed || 0)} / {formatBytes(resourcesData.memoryLimit || 0)}
-                  </div>
-                  <div className="text-sm text-green-700">
-                    {resourcesData.memory || 0}% used
-                  </div>
-                </div>
-
-                <div className="bg-purple-50 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Users className="w-4 h-4 text-purple-600" />
-                    <span className="text-sm font-medium text-purple-800">Container Status</span>
-                  </div>
-                  <div className="text-lg font-bold text-purple-900">
-                    {instance.status}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                No resource data available
-              </div>
-            )}
-          </div>
-
           {/* Historical Metrics */}
           <div className="card">
             <h2 className="text-xl font-semibold mb-6">Historical Metrics (Last Hour)</h2>
@@ -327,12 +292,20 @@ export default function InstanceDetails() {
 
       {activeTab === 'logs' && (
         <div className="card">
-          <h2 className="text-xl font-semibold mb-4">Container Logs</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Container Logs</h2>
+            <button
+              onClick={handleClearLogs}
+              className="btn btn-secondary text-sm"
+            >
+              Clear Logs
+            </button>
+          </div>
           <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-sm overflow-x-auto max-h-[500px] overflow-y-auto">
             {logsError ? (
               <p className="text-red-400">Error loading logs: {logsError.message}</p>
-            ) : logsData?.logs ? (
-              <pre className="whitespace-pre-wrap">{logsData.logs}</pre>
+            ) : logs ? (
+              <pre className="whitespace-pre-wrap">{logs}</pre>
             ) : (
               <p className="text-gray-400">No logs available</p>
             )}

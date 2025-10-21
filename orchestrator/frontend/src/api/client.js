@@ -148,6 +148,10 @@ export const instancesAPI = {
     })
     return response.data
   },
+  createSession: async (id, sessionId) => {
+    const response = await api.post(`/instances/${id}/sessions/${sessionId}`)
+    return response.data
+  },
   // Port management
   checkPortAvailability: async (port) => {
     const response = await api.get(`/instances/port-availability/${port}`)

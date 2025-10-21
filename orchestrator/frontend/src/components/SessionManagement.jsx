@@ -10,13 +10,16 @@ import {
   Loader,
   QrCode,
   User,
-  Phone
+  Phone,
+  Plus
 } from 'lucide-react'
 import { instancesAPI } from '../api/client'
 
 export default function SessionManagement({ instanceId }) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [qrModalSession, setQrModalSession] = useState(null)
+  const [newSessionId, setNewSessionId] = useState('')
+  const [isCreatingSession, setIsCreatingSession] = useState(false)
   const queryClient = useQueryClient()
 
   // Fetch sessions
@@ -71,6 +74,15 @@ export default function SessionManagement({ instanceId }) {
     },
   })
 
+  // Create session mutation
+  const createSessionMutation = useMutation({
+    mutationFn: (sessionId) => instancesAPI.createSession(instanceId, sessionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['sessions', instanceId])
+      setNewSessionId('')
+    },
+  })
+
   const handleDeleteSession = async (sessionId) => {
     if (window.confirm(`Are you sure you want to delete session "${sessionId}"?`)) {
       await deleteSessionMutation.mutateAsync(sessionId)
@@ -85,6 +97,20 @@ export default function SessionManagement({ instanceId }) {
       } finally {
         setIsDeleting(false)
       }
+    }
+  }
+
+  const handleCreateSession = async () => {
+    if (!newSessionId.trim()) {
+      alert('Please enter a session ID')
+      return
+    }
+    
+    setIsCreatingSession(true)
+    try {
+      await createSessionMutation.mutateAsync(newSessionId.trim())
+    } finally {
+      setIsCreatingSession(false)
     }
   }
 
@@ -145,6 +171,31 @@ export default function SessionManagement({ instanceId }) {
               {isDeleting ? 'Deleting...' : 'Delete All'}
             </button>
           </div>
+        </div>
+
+        {/* Create New Session */}
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+          <h4 className="text-sm font-medium text-gray-700 mb-3">Create New Session</h4>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newSessionId}
+              onChange={(e) => setNewSessionId(e.target.value)}
+              placeholder="Enter session ID (e.g., session1, user123)"
+              className="input flex-1"
+            />
+            <button
+              onClick={handleCreateSession}
+              disabled={isCreatingSession || !newSessionId.trim()}
+              className="btn btn-primary flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              {isCreatingSession ? 'Creating...' : 'Create Session'}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            After creating a session, scan the QR code to connect your WhatsApp account.
+          </p>
         </div>
 
         {sessionsLoading ? (

@@ -1265,6 +1265,46 @@ router.get('/:id/debug-connectivity', async (req, res) => {
   }
 });
 
+// POST create a new session
+router.post('/:id/sessions/:sessionId', async (req, res) => {
+  try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const db = getDatabase();
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const instance = result.rows[0];
+    const config = JSON.parse(instance.config);
+    
+    if (instance.status !== 'running') {
+      return res.status(400).json({ error: 'Instance must be running to create session' });
+    }
+    
+    // Create session in wwebjs-api instance
+    const containerName = `wwebjs-${instance.name}`;
+    const createUrl = `http://${containerName}:3000/session/start/${req.params.sessionId}`;
+    
+    const response = await axios.post(createUrl, {}, {
+      headers: {
+        'x-api-key': config.API_KEY
+      }
+    });
+    
+    res.json(response.data);
+  } catch (error) {
+    logger.error('Error creating session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET backup of instance sessions
 router.get('/:id/backup', async (req, res) => {
   try {
