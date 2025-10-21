@@ -1292,7 +1292,12 @@ router.post('/:id/sessions/:sessionId', async (req, res) => {
     const containerName = `wwebjs-${instance.name}`;
     const createUrl = `http://${containerName}:3000/session/start/${req.params.sessionId}`;
     
-    const response = await axios.post(createUrl, {}, {
+    const requestBody = {};
+    if (req.body.webhookUrl) {
+      requestBody.webhookUrl = req.body.webhookUrl;
+    }
+    
+    const response = await axios.post(createUrl, requestBody, {
       headers: {
         'x-api-key': config.API_KEY
       }
@@ -1305,50 +1310,6 @@ router.post('/:id/sessions/:sessionId', async (req, res) => {
   }
 });
 
-// GET backup of instance sessions
-router.get('/:id/backup', async (req, res) => {
-  try {
-    // Check ownership
-    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
-    if (!hasAccess) {
-      return res.status(404).json({ error: 'Instance not found' });
-    }
-    
-    const db = getDatabase();
-    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Instance not found' });
-    }
-    
-    const instance = result.rows[0];
-    const config = JSON.parse(instance.config);
-    
-    if (instance.status !== 'running') {
-      return res.status(400).json({ error: 'Instance must be running to create backup' });
-    }
-    
-    // Get backup from wwebjs-api instance
-    const containerName = `wwebjs-${instance.name}`;
-    const backupUrl = `http://${containerName}:3000/backup`;
-    
-    const response = await axios.get(backupUrl, {
-      headers: {
-        'x-api-key': config.API_KEY
-      },
-      responseType: 'stream'
-    });
-    
-    // Set response headers for file download
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${instance.name}-sessions-backup-${new Date().toISOString().split('T')[0]}.zip"`);
-    
-    // Pipe the backup stream to the response
-    response.data.pipe(res);
-  } catch (error) {
-    logger.error('Error creating backup:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+
 
 module.exports = router;

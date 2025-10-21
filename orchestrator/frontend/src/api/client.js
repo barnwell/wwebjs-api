@@ -142,14 +142,11 @@ export const instancesAPI = {
     const response = await api.get(`/instances/${id}/resources`)
     return response.data
   },
-  downloadBackup: async (id) => {
-    const response = await api.get(`/instances/${id}/backup`, {
-      responseType: 'blob'
+
+  createSession: async (id, sessionId, webhookUrl) => {
+    const response = await api.post(`/instances/${id}/sessions/${sessionId}`, {
+      webhookUrl
     })
-    return response.data
-  },
-  createSession: async (id, sessionId) => {
-    const response = await api.post(`/instances/${id}/sessions/${sessionId}`)
     return response.data
   },
   // Port management

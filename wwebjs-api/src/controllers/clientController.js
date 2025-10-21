@@ -77,7 +77,7 @@ const sendMessage = async (req, res) => {
           if (!mimetype || !data) {
             return sendErrorResponse(res, 400, 'invalid media options')
           }
-          
+
           // Auto-convert audio to opus format if sendAudioAsVoice is enabled
           if (sendOptions.sendAudioAsVoice && mimetype && mimetype.startsWith('audio/')) {
             if (needsConversion(mimetype)) {
@@ -91,14 +91,14 @@ const sendMessage = async (req, res) => {
               }
             }
           }
-          
+
           sendOptions.media = new MessageMedia(mimetype, data, filename, filesize)
         }
         messageOut = await client.sendMessage(chatId, content, sendOptions)
         break
       case 'MessageMediaFromURL': {
         let messageMediaFromURL = await MessageMedia.fromUrl(content, { unsafeMime: true, ...mediaFromURLOptions })
-        
+
         // Auto-convert audio to opus format if sendAudioAsVoice is enabled
         if (sendOptions.sendAudioAsVoice && messageMediaFromURL.mimetype && messageMediaFromURL.mimetype.startsWith('audio/')) {
           if (needsConversion(messageMediaFromURL.mimetype)) {
@@ -115,13 +115,13 @@ const sendMessage = async (req, res) => {
             }
           }
         }
-        
+
         messageOut = await client.sendMessage(chatId, messageMediaFromURL, sendOptions)
         break
       }
       case 'MessageMedia': {
         let { mimetype, data, filename, filesize } = content
-        
+
         // Auto-convert audio to opus format if sendAudioAsVoice is enabled
         if (sendOptions.sendAudioAsVoice && mimetype && mimetype.startsWith('audio/')) {
           if (needsConversion(mimetype)) {
@@ -135,7 +135,7 @@ const sendMessage = async (req, res) => {
             }
           }
         }
-        
+
         const messageMedia = new MessageMedia(mimetype, data, filename, filesize)
         messageOut = await client.sendMessage(chatId, messageMedia, sendOptions)
         break
@@ -180,9 +180,18 @@ const getClassInfo = (req, res) => {
     #swagger.summary = 'Get current connection information'
   */
   try {
+    const { sessions, sessionWebhookUrls } = require('../sessions')
     const client = sessions.get(req.params.sessionId)
     const sessionInfo = client.info
-    res.json({ success: true, sessionInfo })
+    const webhookUrl = sessionWebhookUrls.get(req.params.sessionId) || null
+
+    res.json({
+      success: true,
+      sessionInfo: {
+        ...sessionInfo,
+        webhookUrl
+      }
+    })
   } catch (error) {
     sendErrorResponse(res, 500, error.message)
   }

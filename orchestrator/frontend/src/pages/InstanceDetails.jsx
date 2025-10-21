@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Activity, Terminal, Settings as SettingsIcon, Users, Edit, Cpu, HardDrive, Loader, Eye, EyeOff, Key, Download } from 'lucide-react'
+import { ArrowLeft, Activity, Terminal, Settings as SettingsIcon, Users, Edit, Cpu, HardDrive, Loader, Eye, EyeOff, Key } from 'lucide-react'
 import { instancesAPI, metricsAPI } from '../api/client'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import toast from 'react-hot-toast'
@@ -14,7 +14,7 @@ export default function InstanceDetails({ user }) {
   const [activeTab, setActiveTab] = useState('metrics')
   const [showEditModal, setShowEditModal] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
-  const [isDownloadingBackup, setIsDownloadingBackup] = useState(false)
+
   const [logs, setLogs] = useState('')
 
   const formatBytes = (bytes) => {
@@ -25,30 +25,7 @@ export default function InstanceDetails({ user }) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  const handleDownloadBackup = async () => {
-    if (!instance || instance.status !== 'running') {
-      toast.error('Instance must be running to create backup')
-      return
-    }
 
-    setIsDownloadingBackup(true)
-    try {
-      const blob = await instancesAPI.downloadBackup(id)
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${instance.name}-sessions-backup-${new Date().toISOString().split('T')[0]}.zip`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-      toast.success('Backup downloaded successfully')
-    } catch (error) {
-      toast.error(`Failed to download backup: ${error.message}`)
-    } finally {
-      setIsDownloadingBackup(false)
-    }
-  }
 
   const { data: instance, isLoading, error } = useQuery({
     queryKey: ['instances', id],
@@ -63,12 +40,11 @@ export default function InstanceDetails({ user }) {
     enabled: activeTab === 'metrics',
   })
 
-  // Fetch resource usage for metrics tab
+  // Fetch resource usage for instance header
   const { data: resourcesData, isLoading: resourcesLoading } = useQuery({
     queryKey: ['resources', id],
     queryFn: () => instancesAPI.getResources(id),
     refetchInterval: 5000,
-    enabled: activeTab === 'metrics',
   })
 
   const { data: logsData, error: logsError } = useQuery({
@@ -151,16 +127,7 @@ export default function InstanceDetails({ user }) {
               <Edit className="w-4 h-4" />
               Edit Instance
             </button>
-            {user?.role === 'admin' && (
-              <button
-                onClick={handleDownloadBackup}
-                disabled={isDownloadingBackup || instance?.status !== 'running'}
-                className="btn btn-primary flex items-center gap-2"
-              >
-                <Download className="w-4 h-4" />
-                {isDownloadingBackup ? 'Creating Backup...' : 'Backup Sessions'}
-              </button>
-            )}
+
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${instance.status === 'running'
@@ -171,7 +138,7 @@ export default function InstanceDetails({ user }) {
                 </span>
                 {instance.status === 'running' && resourcesData && (
                   <span className="text-xs text-gray-600">
-                    Memory: {formatBytes(resourcesData.memoryUsed || 0)} / {formatBytes(resourcesData.memoryLimit || 0)}
+                    Memory: {formatBytes(resourcesData.memoryUsed || 0)}
                   </span>
                 )}
               </div>
@@ -187,8 +154,8 @@ export default function InstanceDetails({ user }) {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
           <div>
-            <p className="text-sm text-gray-600">Port</p>
-            <p className="text-lg font-semibold">{instance.port}</p>
+            <p className="text-sm text-gray-600">Instance</p>
+            <p className="text-lg font-semibold">3.140.52.120:{instance.port}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600">Container ID</p>
