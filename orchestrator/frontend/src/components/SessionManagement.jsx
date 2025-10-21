@@ -410,3 +410,4 @@ function QRCodeModal({ instanceId, sessionId, onClose }) {
     </div>
   )
 }
+

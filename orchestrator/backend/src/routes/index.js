@@ -5,6 +5,7 @@ const instanceRoutes = require('./instances');
 const templateRoutes = require('./templates');
 const metricsRoutes = require('./metrics');
 const settingsRoutes = require('./settings');
+const systemRoutes = require('./system');
 
 const router = express.Router();
 
@@ -17,6 +18,7 @@ router.use('/instances', instanceRoutes);
 router.use('/templates', templateRoutes);
 router.use('/metrics', metricsRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/system', systemRoutes);
 
 // API info
 router.get('/', (req, res) => {
@@ -29,7 +31,8 @@ router.get('/', (req, res) => {
       instances: '/api/instances',
       templates: '/api/templates',
       metrics: '/api/metrics',
-      settings: '/api/settings'
+      settings: '/api/settings',
+      system: '/api/system'
     }
   });
 });

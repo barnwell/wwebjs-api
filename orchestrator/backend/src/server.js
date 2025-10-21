@@ -7,6 +7,7 @@ const { initDatabase, closeDatabase } = require('./db');
 const { initDocker } = require('./docker');
 const { initWebSocket } = require('./websocket');
 const metricsCollector = require('./services/metricsCollector');
+const systemMonitor = require('./services/systemMonitor');
 const routes = require('./routes');
 const { logger } = require('./utils/logger');
 
@@ -73,11 +74,16 @@ async function start() {
     } else {
       logger.info('Metrics collection disabled');
     }
+    
+    // Initialize system monitor
+    systemMonitor.start();
+    logger.info('System monitor started');
 
     // Graceful shutdown
     process.on('SIGTERM', () => {
       logger.info('SIGTERM received, shutting down gracefully');
       metricsCollector.stop();
+      systemMonitor.stop();
       closeDatabase();
       server.close(() => {
         logger.info('Server closed');
@@ -88,6 +94,7 @@ async function start() {
     process.on('SIGINT', () => {
       logger.info('SIGINT received, shutting down gracefully');
       metricsCollector.stop();
+      systemMonitor.stop();
       closeDatabase();
       server.close(() => {
         logger.info('Server closed');

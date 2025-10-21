@@ -17,6 +17,7 @@ const { logger } = require('../utils/logger');
 const { authenticateToken, requireOwnershipOrAdmin } = require('../middleware/auth');
 const axios = require('axios');
 const defaultConfig = require('../config/default-instance-config');
+const systemMonitor = require('../services/systemMonitor');
 
 const router = express.Router();
 
@@ -238,6 +239,17 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Name and config are required' });
     }
     
+    // Check if there's enough memory available to create a new instance
+    const memoryCheck = systemMonitor.canCreateNewSession();
+    if (!memoryCheck.canCreate) {
+      return res.status(503).json({ 
+        error: 'Insufficient memory available',
+        memoryInfo: memoryCheck.memoryInfo,
+        minThreshold: memoryCheck.minThreshold,
+        reason: memoryCheck.reason
+      });
+    }
+    
     const db = getDatabase();
     const id = uuidv4();
     
@@ -400,6 +412,17 @@ router.post('/:id/start', async (req, res) => {
     const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
     if (!hasAccess) {
       return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    // Check if there's enough memory available to start an instance
+    const memoryCheck = systemMonitor.canCreateNewSession();
+    if (!memoryCheck.canCreate) {
+      return res.status(503).json({ 
+        error: 'Insufficient memory available',
+        memoryInfo: memoryCheck.memoryInfo,
+        minThreshold: memoryCheck.minThreshold,
+        reason: memoryCheck.reason
+      });
     }
     
     const db = getDatabase();
