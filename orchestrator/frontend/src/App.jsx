@@ -88,7 +88,7 @@ function App() {
         <Route path="/" element={<Layout user={user} onLogout={handleLogout} />}>
           <Route index element={<Dashboard />} />
           <Route path="instances" element={<Instances />} />
-          <Route path="instances/:id" element={<InstanceDetails />} />
+          <Route path="instances/:id" element={<InstanceDetails user={user} />} />
           <Route path="templates" element={<Templates />} />
           <Route path="profile" element={<Profile user={user} onUserUpdate={handleUserUpdate} />} />
           <Route path="settings" element={<Settings />} />

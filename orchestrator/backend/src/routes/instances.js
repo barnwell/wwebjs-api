@@ -1330,7 +1330,7 @@ router.get('/:id/backup', async (req, res) => {
     
     // Get backup from wwebjs-api instance
     const containerName = `wwebjs-${instance.name}`;
-    const backupUrl = `http://${containerName}:3000/session/backup`;
+    const backupUrl = `http://${containerName}:3000/backup`;
     
     const response = await axios.get(backupUrl, {
       headers: {

@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import SessionManagement from '../components/SessionManagement'
 import EditInstanceModal from '../components/EditInstanceModal'
 
-export default function InstanceDetails() {
+export default function InstanceDetails({ user }) {
   const { id } = useParams()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('metrics')
@@ -151,14 +151,16 @@ export default function InstanceDetails() {
               <Edit className="w-4 h-4" />
               Edit Instance
             </button>
-            <button
-              onClick={handleDownloadBackup}
-              disabled={isDownloadingBackup || instance?.status !== 'running'}
-              className="btn btn-primary flex items-center gap-2"
-            >
-              <Download className="w-4 h-4" />
-              {isDownloadingBackup ? 'Creating Backup...' : 'Backup Sessions'}
-            </button>
+            {user?.role === 'admin' && (
+              <button
+                onClick={handleDownloadBackup}
+                disabled={isDownloadingBackup || instance?.status !== 'running'}
+                className="btn btn-primary flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                {isDownloadingBackup ? 'Creating Backup...' : 'Backup Sessions'}
+              </button>
+            )}
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${instance.status === 'running'
