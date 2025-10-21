@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { X, CheckCircle, XCircle, Loader } from 'lucide-react'
+import { X, CheckCircle, XCircle, Loader, Key, Copy } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { instancesAPI } from '../api/client'
 
@@ -34,6 +34,39 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
   })
 
   const [nameError, setNameError] = useState('')
+
+  // Generate a secure API key
+  const generateApiKey = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    let result = ''
+    for (let i = 0; i < 32; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return result
+  }
+
+  // Handle API key generation
+  const handleGenerateApiKey = () => {
+    const newApiKey = generateApiKey()
+    setFormData(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        API_KEY: newApiKey
+      }
+    }))
+    toast.success('API key generated successfully')
+  }
+
+  // Handle copying API key to clipboard
+  const handleCopyApiKey = async () => {
+    try {
+      await navigator.clipboard.writeText(formData.config.API_KEY)
+      toast.success('API key copied to clipboard')
+    } catch (error) {
+      toast.error('Failed to copy API key')
+    }
+  }
 
   // Validate instance name
   const validateInstanceName = (name) => {
@@ -365,14 +398,36 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
                 <div className="space-y-3">
                   <div>
                     <label className="label">API Key *</label>
-                    <input
-                      type="text"
-                      value={formData.config.API_KEY}
-                      onChange={(e) => handleConfigChange('API_KEY', e.target.value)}
-                      className="input w-full"
-                      placeholder="SET_YOUR_API_KEY_HERE"
-                      required
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={formData.config.API_KEY}
+                        onChange={(e) => handleConfigChange('API_KEY', e.target.value)}
+                        className="input flex-1"
+                        placeholder="SET_YOUR_API_KEY_HERE"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={handleGenerateApiKey}
+                        className="btn btn-secondary flex items-center gap-1 px-3"
+                        title="Generate new API key"
+                      >
+                        <Key className="w-4 h-4" />
+                        Generate
+                      </button>
+                      {formData.config.API_KEY && formData.config.API_KEY !== 'SET_YOUR_API_KEY_HERE' && (
+                        <button
+                          type="button"
+                          onClick={handleCopyApiKey}
+                          className="btn btn-secondary flex items-center gap-1 px-3"
+                          title="Copy API key to clipboard"
+                        >
+                          <Copy className="w-4 h-4" />
+                          Copy
+                        </button>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-500 mt-1">
                       Required for accessing wwebjs-api endpoints (sessions, QR codes, etc.)
                     </p>

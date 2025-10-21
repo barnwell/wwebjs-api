@@ -37,6 +37,9 @@ module.exports = {
   BASE_PATH: '',
   TRUST_PROXY: 'FALSE',
   
+  // Memory Management
+  MIN_MEMORY_REQUIRED: '2048',
+  
   // Available callback types for DISABLED_CALLBACKS:
   // - auth_failure: Authentication failures
   // - authenticated: Successful authentication

@@ -80,6 +80,54 @@ function buildEnvVars(config) {
   return env;
 }
 
+// Helper function to check session status for an instance
+async function checkInstanceSessionStatus(instance) {
+  try {
+    if (!instance.container_id || instance.status !== 'running') {
+      return 'disconnected';
+    }
+    
+    const config = typeof instance.config === 'string' ? JSON.parse(instance.config) : instance.config;
+    const containerName = `wwebjs-${instance.name}`;
+    
+    // Get all sessions for this instance
+    const sessionsUrl = `http://${containerName}:3000/session/getSessions`;
+    const sessionsResponse = await axios.get(sessionsUrl, {
+      headers: {
+        'x-api-key': config.API_KEY
+      }
+    });
+    
+    if (!sessionsResponse.data.success || !sessionsResponse.data.result || sessionsResponse.data.result.length === 0) {
+      return 'disconnected';
+    }
+    
+    // Check if any session is connected
+    for (const sessionId of sessionsResponse.data.result) {
+      try {
+        const statusUrl = `http://${containerName}:3000/session/status/${sessionId}`;
+        const statusResponse = await axios.get(statusUrl, {
+          headers: {
+            'x-api-key': config.API_KEY
+          }
+        });
+        
+        if (statusResponse.data.success && statusResponse.data.state === 'CONNECTED') {
+          return 'connected';
+        }
+      } catch (error) {
+        // Continue checking other sessions
+        continue;
+      }
+    }
+    
+    return 'disconnected';
+  } catch (error) {
+    logger.debug(`Error checking session status for instance ${instance.name}:`, error.message);
+    return 'disconnected';
+  }
+}
+
 // GET default instance configuration
 router.get('/default-config', (req, res) => {
   try {
@@ -186,10 +234,17 @@ router.get('/', async (req, res) => {
     
     const result = await db.query(query, params);
     
-    // Parse JSON config for each instance
-    const instances = result.rows.map(instance => ({
-      ...instance,
-      config: JSON.parse(instance.config)
+    // Parse JSON config for each instance and check session status
+    const instances = await Promise.all(result.rows.map(async (instance) => {
+      const parsedInstance = {
+        ...instance,
+        config: JSON.parse(instance.config)
+      };
+      
+      // Check session status dynamically
+      parsedInstance.session_status = await checkInstanceSessionStatus(parsedInstance);
+      
+      return parsedInstance;
     }));
     
     res.json(instances);
@@ -222,6 +277,10 @@ router.get('/:id', async (req, res) => {
     
     const instance = result.rows[0];
     instance.config = JSON.parse(instance.config);
+    
+    // Check session status dynamically
+    instance.session_status = await checkInstanceSessionStatus(instance);
+    
     res.json(instance);
   } catch (error) {
     logger.error('Error fetching instance:', error);
@@ -1202,6 +1261,52 @@ router.get('/:id/debug-connectivity', async (req, res) => {
     });
   } catch (error) {
     logger.error('Error in debug connectivity route:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET backup of instance sessions
+router.get('/:id/backup', async (req, res) => {
+  try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const db = getDatabase();
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const instance = result.rows[0];
+    const config = JSON.parse(instance.config);
+    
+    if (instance.status !== 'running') {
+      return res.status(400).json({ error: 'Instance must be running to create backup' });
+    }
+    
+    // Get backup from wwebjs-api instance
+    const containerName = `wwebjs-${instance.name}`;
+    const backupUrl = `http://${containerName}:3000/session/backup`;
+    
+    const response = await axios.get(backupUrl, {
+      headers: {
+        'x-api-key': config.API_KEY
+      },
+      responseType: 'stream'
+    });
+    
+    // Set response headers for file download
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${instance.name}-sessions-backup-${new Date().toISOString().split('T')[0]}.zip"`);
+    
+    // Pipe the backup stream to the response
+    response.data.pipe(res);
+  } catch (error) {
+    logger.error('Error creating backup:', error);
     res.status(500).json({ error: error.message });
   }
 });

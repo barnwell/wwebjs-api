@@ -142,6 +142,12 @@ export const instancesAPI = {
     const response = await api.get(`/instances/${id}/resources`)
     return response.data
   },
+  downloadBackup: async (id) => {
+    const response = await api.get(`/instances/${id}/backup`, {
+      responseType: 'blob'
+    })
+    return response.data
+  },
   // Port management
   checkPortAvailability: async (port) => {
     const response = await api.get(`/instances/port-availability/${port}`)
@@ -197,6 +203,10 @@ export const metricsAPI = {
   },
   cleanup: async (daysToKeep = 30) => {
     const response = await api.delete(`/metrics/cleanup?daysToKeep=${daysToKeep}`)
+    return response.data
+  },
+  getServer: async () => {
+    const response = await api.get('/metrics/server')
     return response.data
   },
 }

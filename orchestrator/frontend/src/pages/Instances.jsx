@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Plus, Play, Square, RotateCw, Trash2, Edit2, User } from 'lucide-react'
+import { Plus, Play, Square, RotateCw, Trash2, Edit2, User, Cpu, HardDrive } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { instancesAPI, templatesAPI } from '../api/client'
+import { instancesAPI, templatesAPI, metricsAPI } from '../api/client'
 import CreateInstanceModal from '../components/CreateInstanceModal'
 import EditInstanceModal from '../components/EditInstanceModal'
 
@@ -21,6 +21,12 @@ export default function Instances() {
   const { data: templates = [], error: templatesError } = useQuery({
     queryKey: ['templates'],
     queryFn: templatesAPI.getAll,
+  })
+
+  const { data: latestMetrics = [] } = useQuery({
+    queryKey: ['metrics', 'latest'],
+    queryFn: metricsAPI.getLatest,
+    refetchInterval: 5000,
   })
 
   const startMutation = useMutation({
@@ -73,6 +79,10 @@ export default function Instances() {
     }
   }
 
+  const getMetricsForInstance = (instanceId) => {
+    return latestMetrics.find(m => m.instance_id === instanceId) || {}
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -116,44 +126,71 @@ export default function Instances() {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-          {instances.map((instance) => (
-            <div key={instance.id} className="card">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold">{instance.name}</h3>
-                  <div className="flex items-center gap-4 mt-1">
-                    <p className="text-sm text-gray-600">Port: {instance.port}</p>
-                    {instance.owner_username && (
-                      <div className="flex items-center gap-1 text-sm text-gray-600">
-                        <User className="w-3 h-3" />
-                        <span>{instance.owner_username}</span>
-                      </div>
-                    )}
+          {instances.map((instance) => {
+            const metrics = getMetricsForInstance(instance.id)
+            return (
+              <div key={instance.id} className="card">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold">{instance.name}</h3>
+                    <div className="flex items-center gap-4 mt-1">
+                      <p className="text-sm text-gray-600">Port: {instance.port}</p>
+                      {instance.owner_username && (
+                        <div className="flex items-center gap-1 text-sm text-gray-600">
+                          <User className="w-3 h-3" />
+                          <span>{instance.owner_username}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      instance.status === 'running'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-gray-100 text-gray-700'
+                    }`}>
+                      {instance.status}
+                    </span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      instance.session_status === 'connected'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {instance.session_status || 'disconnected'}
+                    </span>
                   </div>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    instance.status === 'running'
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-gray-100 text-gray-700'
-                  }`}>
-                    {instance.status}
-                  </span>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    instance.session_status === 'connected'
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    {instance.session_status || 'disconnected'}
-                  </span>
-                </div>
-              </div>
 
-              {instance.description && (
-                <p className="text-sm text-gray-600 mb-4">{instance.description}</p>
-              )}
+                {instance.description && (
+                  <p className="text-sm text-gray-600 mb-4">{instance.description}</p>
+                )}
 
-              <div className="flex flex-wrap gap-2">
+                {/* Resource Usage */}
+                {instance.status === 'running' && metrics.cpu_usage && (
+                  <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Resource Usage</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex items-center gap-2">
+                        <Cpu className="w-4 h-4 text-blue-500" />
+                        <div>
+                          <div className="text-sm text-gray-600">CPU</div>
+                          <div className="text-sm font-medium">{metrics.cpu_usage}%</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <HardDrive className="w-4 h-4 text-green-500" />
+                        <div>
+                          <div className="text-sm text-gray-600">Memory</div>
+                          <div className="text-sm font-medium">
+                            {metrics.memory_usage}MB
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
                 {instance.status === 'stopped' ? (
                   <button
                     onClick={() => startMutation.mutate(instance.id)}
@@ -207,9 +244,10 @@ export default function Instances() {
                   <Trash2 className="w-4 h-4" />
                   Delete
                 </button>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
