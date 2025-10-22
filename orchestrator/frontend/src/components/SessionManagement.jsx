@@ -265,7 +265,7 @@ export default function SessionManagement({ instanceId }) {
                             {classInfo.webhookUrl && (
                               <div className="flex items-center gap-2 text-sm">
                                 <span className="w-3 h-3 text-purple-500">🔗</span>
-                                <span className="text-gray-700 font-mono text-xs truncate max-w-xs" title={classInfo.webhookUrl}>
+                                <span className="text-gray-700 font-mono text-xs max-w-xs" title={classInfo.webhookUrl}>
                                   {classInfo.webhookUrl}
                                 </span>
                               </div>

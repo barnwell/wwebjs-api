@@ -14,6 +14,7 @@ export default function InstanceDetails({ user }) {
   const [activeTab, setActiveTab] = useState('metrics')
   const [showEditModal, setShowEditModal] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
+  const [showImageUpdateModal, setShowImageUpdateModal] = useState(false)
 
   const [logs, setLogs] = useState('')
 
@@ -164,6 +165,25 @@ export default function InstanceDetails({ user }) {
             </p>
           </div>
           <div>
+            <p className="text-sm text-gray-600">Docker Image</p>
+            <p className="text-lg font-semibold font-mono text-sm" title={instance.container_info?.image || 'N/A'}>
+              {instance.container_info?.image ? 
+                (instance.container_info.image.length > 20 ? 
+                  `${instance.container_info.image.substring(0, 20)}...` : 
+                  instance.container_info.image
+                ) : 'N/A'
+              }
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">Image ID</p>
+            <p className="text-lg font-semibold font-mono text-sm" title={instance.container_info?.image_id || 'N/A'}>
+              {instance.container_info?.image_id ? 
+                `${instance.container_info.image_id.substring(0, 12)}...` : 'N/A'
+              }
+            </p>
+          </div>
+          <div>
             <p className="text-sm text-gray-600">Created</p>
             <p className="text-lg font-semibold">
               {new Date(instance.created_at).toLocaleDateString()}
@@ -284,6 +304,75 @@ export default function InstanceDetails({ user }) {
 
       {activeTab === 'config' && (
         <div className="space-y-6">
+          {/* Container Information Section */}
+          {instance.container_info && (
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Container Information</h3>
+                {user?.role === 'admin' && (
+                  <button
+                    onClick={() => setShowImageUpdateModal(true)}
+                    className="btn btn-secondary text-sm"
+                  >
+                    Update Image
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">Docker Image</h4>
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-xs text-gray-500">Image Name</p>
+                      <p className="font-mono text-sm bg-gray-50 rounded px-2 py-1 break-all">
+                        {instance.container_info.image}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Image ID</p>
+                      <p className="font-mono text-sm bg-gray-50 rounded px-2 py-1">
+                        {instance.container_info.image_id}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Platform</p>
+                      <p className="font-mono text-sm bg-gray-50 rounded px-2 py-1">
+                        {instance.container_info.platform}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">Build Information</h4>
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-xs text-gray-500">Version</p>
+                      <p className="font-mono text-sm bg-gray-50 rounded px-2 py-1">
+                        {instance.container_info.build_info?.version || 'Unknown'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Git Revision</p>
+                      <p className="font-mono text-sm bg-gray-50 rounded px-2 py-1">
+                        {instance.container_info.build_info?.revision || 'Unknown'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Build Date</p>
+                      <p className="font-mono text-sm bg-gray-50 rounded px-2 py-1">
+                        {instance.container_info.build_info?.build_date !== 'Unknown' ? 
+                          new Date(instance.container_info.build_info.build_date).toLocaleString() :
+                          'Unknown'
+                        }
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* API Key Section */}
           <div className="card">
             <div className="flex items-center justify-between mb-4">
@@ -357,7 +446,7 @@ export default function InstanceDetails({ user }) {
 
           {/* Configuration Section */}
           <div className="card">
-            <h2 className="text-xl font-semibold mb-4">Configuration</h2>
+            <h2 className="text-xl font-semibold mb-4">Environment Configuration</h2>
             <div className="space-y-4">
               {Object.entries(instance.config).map(([key, value]) => (
                 <div key={key} className="border-b border-gray-200 pb-3">
@@ -380,6 +469,133 @@ export default function InstanceDetails({ user }) {
           onSuccess={() => setShowEditModal(false)}
         />
       )}
+
+      {/* Image Update Modal */}
+      {showImageUpdateModal && (
+        <ImageUpdateModal
+          instance={instance}
+          onClose={() => setShowImageUpdateModal(false)}
+          onSuccess={() => setShowImageUpdateModal(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// Image Update Modal Component
+function ImageUpdateModal({ instance, onClose, onSuccess }) {
+  const [image, setImage] = useState(instance.container_info?.image || 'wwebjs-api:latest')
+  const [isLoading, setIsLoading] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setIsLoading(true)
+
+    try {
+      const response = await instancesAPI.updateImage(instance.id, { image })
+      toast.success(response.message || 'Image updated successfully')
+      onSuccess()
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to update image')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const commonImages = [
+    'wwebjs-api:latest',
+    'wwebjs-api:dev',
+    'wwebjs-api:v1.1-message-status',
+    'wwebjs-api:stable'
+  ]
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <h2 className="text-xl font-semibold mb-4">Update Docker Image</h2>
+        
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Docker Image
+            </label>
+            <input
+              type="text"
+              value={image}
+              onChange={(e) => setImage(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+              placeholder="e.g., wwebjs-api:latest"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Current: {instance.container_info?.image || 'Unknown'}
+            </p>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Common Images
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {commonImages.map((img) => (
+                <button
+                  key={img}
+                  type="button"
+                  onClick={() => setImage(img)}
+                  className={`text-xs px-2 py-1 rounded border ${
+                    image === img 
+                      ? 'bg-primary-100 border-primary-300 text-primary-700'
+                      : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {img}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-yellow-800">
+                  Important: Session Preservation
+                </h3>
+                <div className="mt-2 text-sm text-yellow-700">
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>This will stop and recreate the container with the new image</li>
+                    <li>WhatsApp sessions are preserved via volume mounting</li>
+                    <li>There will be a brief downtime during the update</li>
+                    <li>Backup your sessions before major updates (recommended)</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+              disabled={isLoading}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+              disabled={isLoading}
+            >
+              {isLoading ? 'Updating...' : 'Update Image'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

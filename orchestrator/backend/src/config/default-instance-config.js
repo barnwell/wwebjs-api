@@ -16,7 +16,7 @@ module.exports = {
   // Client Configuration
   MAX_ATTACHMENT_SIZE: '10000000',
   SET_MESSAGES_AS_SEEN: 'TRUE',
-  DISABLED_CALLBACKS: 'message_ack|message_reaction|unread_count|message_edit|message_ciphertext|message_create|loading_screen',
+  DISABLED_CALLBACKS: 'message_ack|message_reaction|unread_count|message_edit|message_ciphertext|message_create|message_status|loading_screen',
   WEB_VERSION: '2.2328.5',
   WEB_VERSION_CACHE_TYPE: 'none',
   RECOVER_SESSIONS: 'TRUE',
@@ -56,6 +56,7 @@ module.exports = {
   // - message_create: Message creation events
   // - message_reaction: Message reactions
   // - message_revoke_everyone: Message revocations
+  // - message_status: Status update messages
   // - qr: QR code generation
   // - ready: Session ready
   // - contact_changed: Contact information changes

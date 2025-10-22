@@ -257,28 +257,28 @@ const initializeEvents = (client, sessionId) => {
   // check if the session webhook is overridden (custom webhook URL takes priority)
   const customWebhookUrl = sessionWebhookUrls.get(sessionId)
   const sessionWebhook = customWebhookUrl || process.env[sessionId.toUpperCase() + '_WEBHOOK_URL'] || baseWebhookURL
-  
-  logger.info({ 
-    sessionId, 
-    customWebhookUrl, 
+
+  logger.info({
+    sessionId,
+    customWebhookUrl,
     envWebhookUrl: process.env[sessionId.toUpperCase() + '_WEBHOOK_URL'],
     baseWebhookURL,
-    finalWebhookUrl: sessionWebhook 
+    finalWebhookUrl: sessionWebhook
   }, 'Webhook URL configuration for session')
 
   if (recoverSessions) {
     waitForNestedObject(client, 'pupPage').then(() => {
       const restartSession = async (sessionId) => {
         logger.info({ sessionId }, 'Restarting session due to browser page close/error')
-        
+
         // Remove all event listeners to prevent duplicate webhook calls
         client.removeAllListeners()
         client.pupPage?.removeAllListeners('close')
         client.pupPage?.removeAllListeners('error')
-        
+
         sessions.delete(sessionId)
         await client.destroy().catch(e => { })
-        
+
         // Preserve custom webhook URL when restarting session
         const customWebhookUrl = sessionWebhookUrls.get(sessionId)
         logger.info({ sessionId, customWebhookUrl }, 'Restarting session with preserved webhook URL')
@@ -397,11 +397,33 @@ const initializeEvents = (client, sessionId) => {
   }
 
   client.on('message', async (message) => {
+    // Handle status messages separately from regular messages
+    if (message.isStatus) {
+      if (isEventEnabled('message_status')) {
+        triggerWebhook(sessionWebhook, sessionId, 'message_status', { message })
+        triggerWebSocket(sessionId, 'message_status', { message })
+        // Handle media for status messages if they have media
+        if (message.hasMedia && message._data?.size < maxAttachmentSize) {
+          if (isEventEnabled('media')) {
+            message.downloadMedia().then(messageMedia => {
+              triggerWebhook(sessionWebhook, sessionId, 'media', { messageMedia, message })
+              triggerWebSocket(sessionId, 'media', { messageMedia, message })
+            }).catch(error => {
+              logger.error({ sessionId, err: error }, 'Failed to download media for status message')
+            })
+          }
+        }
+      }
+      // Don't process status messages further (no seen status, etc.)
+      return
+    }
+
+    // Handle regular messages (isStatus = false)
     if (isEventEnabled('message')) {
       triggerWebhook(sessionWebhook, sessionId, 'message', { message })
       triggerWebSocket(sessionId, 'message', { message })
       if (message.hasMedia && message._data?.size < maxAttachmentSize) {
-      // custom service event
+        // custom service event
         if (isEventEnabled('media')) {
           message.downloadMedia().then(messageMedia => {
             triggerWebhook(sessionWebhook, sessionId, 'media', { messageMedia, message })

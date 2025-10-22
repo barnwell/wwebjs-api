@@ -281,6 +281,33 @@ router.get('/:id', async (req, res) => {
     // Check session status dynamically
     instance.session_status = await checkInstanceSessionStatus(instance);
     
+    // Add container inspection data if container exists
+    if (instance.container_id) {
+      try {
+        const containerInfo = await inspectContainer(instance.container_id);
+        instance.container_info = {
+          image: containerInfo.Config?.Image || 'Unknown',
+          image_id: containerInfo.Image || 'Unknown',
+          created: containerInfo.Created,
+          platform: containerInfo.Platform || 'Unknown',
+          // Extract build info from labels if available
+          build_info: {
+            version: containerInfo.Config?.Labels?.['org.opencontainers.image.version'] || 
+                    containerInfo.Config?.Labels?.['version'] || 'Unknown',
+            revision: containerInfo.Config?.Labels?.['org.opencontainers.image.revision'] || 
+                     containerInfo.Config?.Labels?.['git.commit'] || 'Unknown',
+            build_date: containerInfo.Config?.Labels?.['org.opencontainers.image.created'] || 
+                       containerInfo.Config?.Labels?.['build.date'] || 'Unknown'
+          }
+        };
+      } catch (error) {
+        logger.warn(`Failed to inspect container ${instance.container_id}:`, error.message);
+        instance.container_info = null;
+      }
+    } else {
+      instance.container_info = null;
+    }
+    
     res.json(instance);
   } catch (error) {
     logger.error('Error fetching instance:', error);
@@ -1310,6 +1337,98 @@ router.post('/:id/sessions/:sessionId', async (req, res) => {
   }
 });
 
+// PUT update instance Docker image (admin only)
+router.put('/:id/image', async (req, res) => {
+  try {
+    // Only admins can change Docker images
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
 
+    const { image } = req.body;
+    
+    if (!image) {
+      return res.status(400).json({ error: 'Image name is required' });
+    }
+
+    const db = getDatabase();
+    
+    // Get current instance
+    const instanceResult = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    if (instanceResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+
+    const instance = instanceResult.rows[0];
+    
+    // If container is running, we need to recreate it
+    if (instance.container_id && instance.status === 'running') {
+      try {
+        // Stop the current container
+        await stopContainer(instance.container_id);
+        
+        // Remove the old container
+        await removeContainer(instance.container_id, true);
+        
+        // Create new container with new image
+        const config = JSON.parse(instance.config);
+        
+        // Use consistent session path (same as initial creation)
+        const sessionsPath = path.resolve(process.env.WWEBJS_SESSIONS_PATH || './instances', instance.name);
+        
+        const container = await createContainer({
+          image: image,
+          name: `wwebjs-${instance.name}`,
+          env: buildEnvVars(config),
+          exposedPorts: { '3000/tcp': {} },
+          portBindings: { '3000/tcp': [{ HostPort: instance.port.toString() }] },
+          volumes: [`${sessionsPath}:/usr/src/app/sessions`],
+          labels: {
+            'orchestrator.instance.id': instance.id,
+            'orchestrator.instance.name': instance.name
+          }
+        });
+
+        // Start the new container
+        await startContainer(container.id);
+
+        // Update database with new container ID
+        await db.query(`
+          UPDATE instances 
+          SET container_id = $1, last_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [container.id, req.params.id]);
+
+        logger.info(`Instance ${instance.name} updated to use image: ${image}`);
+        
+        broadcast('instance_updated', { 
+          instance: { ...instance, container_id: container.id },
+          message: `Updated to image: ${image}`
+        });
+
+        res.json({ 
+          success: true, 
+          message: `Instance updated to use image: ${image}`,
+          container_id: container.id
+        });
+
+      } catch (error) {
+        logger.error(`Error updating instance ${instance.name} image:`, error);
+        res.status(500).json({ error: `Failed to update container: ${error.message}` });
+      }
+    } else {
+      // Instance not running, just log the change for next start
+      logger.info(`Instance ${instance.name} will use image ${image} on next start`);
+      res.json({ 
+        success: true, 
+        message: `Instance will use image ${image} on next start`
+      });
+    }
+
+  } catch (error) {
+    logger.error('Error updating instance image:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;

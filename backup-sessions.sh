@@ -6,6 +6,7 @@
 
 BACKUP_DIR="${2:-./backups}"
 DATE=$(date +%Y-%m-%d_%H-%M-%S)
+INSTANCES_DIR="${WWEBJS_SESSIONS_PATH:-./instances}"
 
 # Create backup directory if it doesn't exist
 mkdir -p "$BACKUP_DIR"
@@ -14,38 +15,62 @@ mkdir -p "$BACKUP_DIR"
 backup_instance() {
     local instance_name="$1"
     local container_name="wwebjs-${instance_name}"
+    local host_sessions_path="${INSTANCES_DIR}/${instance_name}"
     
     echo "Backing up instance: $instance_name"
     
-    # Check if container exists
-    if ! docker ps -a --format "table {{.Names}}" | grep -q "^${container_name}$"; then
-        echo "Warning: Container '$container_name' not found, skipping..."
-        return 1
-    fi
-    
-    # Create instance-specific backup directory
-    local instance_backup_dir="${BACKUP_DIR}/${instance_name}_${DATE}"
-    mkdir -p "$instance_backup_dir"
-    
-    # Copy sessions directory from container
-    if docker cp "${container_name}:/app/sessions/." "$instance_backup_dir/" 2>/dev/null; then
-        # Create a compressed archive
+    # Check if host sessions directory exists (preferred method)
+    if [ -d "$host_sessions_path" ]; then
+        echo "  Using host directory: $host_sessions_path"
+        
+        # Create a compressed archive directly from host directory
         local archive_name="${BACKUP_DIR}/${instance_name}_sessions_${DATE}.tar.gz"
-        tar -czf "$archive_name" -C "$instance_backup_dir" .
         
-        # Remove temporary directory
-        rm -rf "$instance_backup_dir"
+        if tar -czf "$archive_name" -C "$host_sessions_path" . 2>/dev/null; then
+            echo "✓ Backup created: $archive_name"
+            
+            # Show backup size and file count
+            local size=$(du -h "$archive_name" | cut -f1)
+            local file_count=$(tar -tzf "$archive_name" | wc -l)
+            echo "  Size: $size ($file_count files)"
+            
+            return 0
+        else
+            echo "✗ Failed to create backup archive"
+            return 1
+        fi
         
-        echo "✓ Backup created: $archive_name"
+    # Fallback: try to copy from container
+    elif docker ps -a --format "table {{.Names}}" | grep -q "^${container_name}$"; then
+        echo "  Using container: $container_name"
         
-        # Show backup size
-        local size=$(du -h "$archive_name" | cut -f1)
-        echo "  Size: $size"
+        # Create instance-specific backup directory
+        local instance_backup_dir="${BACKUP_DIR}/${instance_name}_${DATE}"
+        mkdir -p "$instance_backup_dir"
         
-        return 0
+        # Copy sessions directory from container
+        if docker cp "${container_name}:/usr/src/app/sessions/." "$instance_backup_dir/" 2>/dev/null; then
+            # Create a compressed archive
+            local archive_name="${BACKUP_DIR}/${instance_name}_sessions_${DATE}.tar.gz"
+            tar -czf "$archive_name" -C "$instance_backup_dir" .
+            
+            # Remove temporary directory
+            rm -rf "$instance_backup_dir"
+            
+            echo "✓ Backup created: $archive_name"
+            
+            # Show backup size
+            local size=$(du -h "$archive_name" | cut -f1)
+            echo "  Size: $size"
+            
+            return 0
+        else
+            echo "✗ Failed to backup from container (may not be running or sessions directory empty)"
+            rm -rf "$instance_backup_dir"
+            return 1
+        fi
     else
-        echo "✗ Failed to backup $instance_name (container may not be running or sessions directory empty)"
-        rm -rf "$instance_backup_dir"
+        echo "✗ Neither host directory nor container found for $instance_name"
         return 1
     fi
 }

@@ -494,10 +494,10 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
                       value={formData.config.DISABLED_CALLBACKS}
                       onChange={(e) => handleConfigChange('DISABLED_CALLBACKS', e.target.value)}
                       className="input w-full"
-                      placeholder="message_ack|message_reaction|unread_count (separated by |)"
+                      placeholder="message_ack|message_status|message_reaction|unread_count (separated by |)"
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      Callbacks to disable, separated by | (e.g., message_ack|message_reaction|unread_count)
+                      Callbacks to disable, separated by | (e.g., message_ack|message_status|message_reaction|unread_count)
                     </p>
                   </div>
 

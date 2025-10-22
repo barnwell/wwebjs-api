@@ -162,6 +162,10 @@ export const instancesAPI = {
     const response = await api.get('/instances/available-ports')
     return response.data
   },
+  updateImage: async (id, data) => {
+    const response = await api.put(`/instances/${id}/image`, data)
+    return response.data
+  },
 }
 
 // Templates API
