@@ -16,7 +16,7 @@ module.exports = {
   // Client Configuration
   MAX_ATTACHMENT_SIZE: '10000000',
   SET_MESSAGES_AS_SEEN: 'TRUE',
-  DISABLED_CALLBACKS: 'message_ack|message_reaction|unread_count|message_edit|message_ciphertext|message_create|message_status|loading_screen',
+  DISABLED_CALLBACKS: 'message_ack|message_reaction|unread_count|message_edit|message_ciphertext|message_create|message_status|media_uploaded|loading_screen',
   WEB_VERSION: '2.2328.5',
   WEB_VERSION_CACHE_TYPE: 'none',
   RECOVER_SESSIONS: 'TRUE',
