@@ -38,7 +38,7 @@ module.exports = {
   TRUST_PROXY: 'FALSE',
   
   // Memory Management
-  MIN_MEMORY_REQUIRED: '2048',
+  MIN_MEMORY_REQUIRED: '1024',
   
   // Available callback types for DISABLED_CALLBACKS:
   // - auth_failure: Authentication failures

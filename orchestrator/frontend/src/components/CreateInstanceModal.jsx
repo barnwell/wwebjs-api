@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { X, CheckCircle, XCircle, Loader, Key, Copy } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { instancesAPI } from '../api/client'
+import { instancesAPI, usersAPI } from '../api/client'
 
-export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
+export default function CreateInstanceModal({ templates, onClose, onSuccess, user }) {
   // Fetch default configuration from backend
   const { data: defaultConfig, isLoading: isLoadingConfig } = useQuery({
     queryKey: ['default-config'],
@@ -18,6 +18,13 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
     queryFn: instancesAPI.getPortRange,
   })
 
+  // Fetch users for admin assignment (only for admins)
+  const { data: users = [], isLoading: isLoadingUsers } = useQuery({
+    queryKey: ['users'],
+    queryFn: usersAPI.getAll,
+    enabled: user?.role === 'admin', // Only fetch if user is admin
+  })
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -25,6 +32,7 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
     config: {},
     port: '', // Add port field
     useCustomPort: false, // Add custom port toggle
+    assignedUserId: '', // For admin user assignment
   })
 
   const [portStatus, setPortStatus] = useState({
@@ -142,7 +150,8 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
       description: formData.description,
       templateId: formData.templateId || undefined,
       config: formData.config,
-      ...(formData.useCustomPort && formData.port && { port: parseInt(formData.port) })
+      ...(formData.useCustomPort && formData.port && { port: parseInt(formData.port) }),
+      ...(user?.role === 'admin' && formData.assignedUserId && { assignedUserId: formData.assignedUserId })
     }
     
     createMutation.mutate(submissionData)
@@ -282,6 +291,32 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
               placeholder="Optional description..."
             />
           </div>
+
+          {/* User Assignment (Admin Only) */}
+          {user?.role === 'admin' && (
+            <div>
+              <label className="label">Assign to User</label>
+              <select
+                value={formData.assignedUserId}
+                onChange={(e) => setFormData({ ...formData, assignedUserId: e.target.value })}
+                className="input w-full"
+              >
+                <option value="">Assign to yourself</option>
+                {isLoadingUsers ? (
+                  <option disabled>Loading users...</option>
+                ) : (
+                  users.map(u => (
+                    <option key={u.id} value={u.id}>
+                      {u.username} ({u.email}) - {u.role}
+                    </option>
+                  ))
+                )}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Leave empty to assign the instance to yourself. Select a user to assign it to them.
+              </p>
+            </div>
+          )}
 
           {/* Port Selection */}
           <div>
@@ -613,6 +648,21 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
               <div>
                 <h4 className="font-medium text-sm text-gray-700 mb-3">Advanced Configuration</h4>
                 <div className="space-y-3">
+                  <div>
+                    <label className="label">Min Memory Required (MB)</label>
+                    <input
+                      type="number"
+                      value={formData.config.MIN_MEMORY_REQUIRED}
+                      onChange={(e) => handleConfigChange('MIN_MEMORY_REQUIRED', e.target.value)}
+                      className="input w-full"
+                      placeholder="2048"
+                      min="512"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Minimum memory required for the instance to start (in MB)
+                    </p>
+                  </div>
+
                   <div>
                     <label className="label">Enable WebSocket</label>
                     <select

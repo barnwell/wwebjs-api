@@ -12,6 +12,9 @@ export default function Instances() {
   const [editingInstance, setEditingInstance] = useState(null)
   const queryClient = useQueryClient()
 
+  // Get current user from localStorage 
+  const user = JSON.parse(localStorage.getItem('user') || 'null')
+
   const { data: instances = [], isLoading, error } = useQuery({
     queryKey: ['instances'],
     queryFn: instancesAPI.getAll,
@@ -254,6 +257,7 @@ export default function Instances() {
       {isCreateModalOpen && (
         <CreateInstanceModal
           templates={templates}
+          user={user}
           onClose={() => setIsCreateModalOpen(false)}
           onSuccess={() => {
             setIsCreateModalOpen(false)
@@ -265,6 +269,7 @@ export default function Instances() {
       {editingInstance && (
         <EditInstanceModal
           instance={editingInstance}
+          user={user}
           onClose={() => setEditingInstance(null)}
           onSuccess={() => {
             setEditingInstance(null)

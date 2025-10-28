@@ -25,7 +25,7 @@ const enableWebSocket = process.env.ENABLE_WEBSOCKET ? (process.env.ENABLE_WEBSO
 const autoStartSessions = process.env.AUTO_START_SESSIONS ? (process.env.AUTO_START_SESSIONS).toLowerCase() === 'true' : true
 const basePath = process.env.BASE_PATH || '/'
 const trustProxy = process.env.TRUST_PROXY ? (process.env.TRUST_PROXY).toLowerCase() === 'true' : false
-const minMemoryRequired = parseInt(process.env.MIN_MEMORY_REQUIRED) || 2048 // Default 2GB in MB
+const minMemoryRequired = parseInt(process.env.MIN_MEMORY_REQUIRED) || 1024 // Default 2GB in MB
 
 module.exports = {
   servicePort,

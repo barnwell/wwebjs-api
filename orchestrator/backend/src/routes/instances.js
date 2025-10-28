@@ -318,7 +318,7 @@ router.get('/:id', async (req, res) => {
 // CREATE new instance
 router.post('/', async (req, res) => {
   try {
-    const { name, description, config, templateId, port: requestedPort } = req.body;
+    const { name, description, config, templateId, port: requestedPort, assignedUserId } = req.body;
     
     if (!name || !config) {
       return res.status(400).json({ error: 'Name and config are required' });
@@ -326,6 +326,20 @@ router.post('/', async (req, res) => {
     
     const db = getDatabase();
     const id = uuidv4();
+
+    // Handle user assignment - only admins can assign to other users
+    let targetUserId = req.user.id; // Default to current user
+    if (assignedUserId && req.user.role === 'admin') {
+      // Verify the target user exists
+      const userCheck = await db.query('SELECT id FROM users WHERE id = $1', [assignedUserId]);
+      if (userCheck.rows.length === 0) {
+        return res.status(400).json({ error: 'Target user not found' });
+      }
+      targetUserId = assignedUserId;
+    } else if (assignedUserId && req.user.role !== 'admin') {
+      // Non-admin tried to assign to someone else
+      return res.status(403).json({ error: 'Only admins can assign instances to other users' });
+    }
     
     // Handle port assignment
     let port;
@@ -370,7 +384,7 @@ router.post('/', async (req, res) => {
     await db.query(`
       INSERT INTO instances (id, name, description, port, config, status, user_id)
       VALUES ($1, $2, $3, $4, $5, 'stopped', $6)
-    `, [id, name, description || '', port, JSON.stringify(finalConfig), req.user.id]);
+    `, [id, name, description || '', port, JSON.stringify(finalConfig), targetUserId]);
     
     const instanceResult = await db.query(`
       SELECT i.*, u.username as owner_username, u.email as owner_email
@@ -400,7 +414,7 @@ router.patch('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Instance not found' });
     }
     
-    const { name, description, config, port: requestedPort } = req.body;
+    const { name, description, config, port: requestedPort, assignedUserId } = req.body;
     
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
@@ -411,6 +425,20 @@ router.patch('/:id', async (req, res) => {
     
     const instance = result.rows[0];
     const currentConfig = JSON.parse(instance.config);
+
+    // Handle user assignment change - only admins can reassign instances
+    let targetUserId = instance.user_id; // Default to current assigned user
+    if (assignedUserId && req.user.role === 'admin') {
+      // Verify the target user exists
+      const userCheck = await db.query('SELECT id FROM users WHERE id = $1', [assignedUserId]);
+      if (userCheck.rows.length === 0) {
+        return res.status(400).json({ error: 'Target user not found' });
+      }
+      targetUserId = assignedUserId;
+    } else if (assignedUserId && req.user.role !== 'admin') {
+      // Non-admin tried to assign to someone else
+      return res.status(403).json({ error: 'Only admins can reassign instances to other users' });
+    }
     
     // Handle port change if requested
     let port = instance.port;
@@ -450,13 +478,15 @@ router.patch('/:id', async (req, res) => {
           description = COALESCE($2, description),
           port = $3,
           config = $4,
+          user_id = $5,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $5
+      WHERE id = $6
     `, [
       name || instance.name,
       description !== undefined ? description : instance.description,
       port,
       JSON.stringify(updatedConfig),
+      targetUserId,
       instance.id
     ]);
     
@@ -1427,6 +1457,66 @@ router.put('/:id/image', async (req, res) => {
 
   } catch (error) {
     logger.error('Error updating instance image:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT update instance container ID (admin only) - for fixing lost containers
+router.put('/:id/container-id', async (req, res) => {
+  try {
+    // Only admins can update container IDs
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { container_id } = req.body;
+    
+    if (!container_id) {
+      return res.status(400).json({ error: 'Container ID is required' });
+    }
+
+    const db = getDatabase();
+    
+    // Verify the container exists
+    try {
+      await inspectContainer(container_id);
+    } catch (error) {
+      return res.status(400).json({ error: 'Container not found or not accessible' });
+    }
+    
+    // Update the database
+    const result = await db.query(`
+      UPDATE instances 
+      SET container_id = $1, status = 'running', last_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+      RETURNING *
+    `, [container_id, req.params.id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+
+    const instance = result.rows[0];
+    logger.info(`Container ID updated for instance ${instance.name}: ${container_id}`);
+    
+    broadcast('instance_updated', { 
+      instance,
+      message: `Container ID updated: ${container_id}`
+    });
+
+    res.json({ 
+      success: true, 
+      message: `Container ID updated successfully`,
+      instance: {
+        id: instance.id,
+        name: instance.name,
+        container_id: instance.container_id,
+        status: instance.status
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error updating container ID:', error);
     res.status(500).json({ error: error.message });
   }
 });

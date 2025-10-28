@@ -268,19 +268,19 @@ export const authAPI = {
 export const usersAPI = {
   getAll: async () => {
     const response = await api.get('/users')
-    return response.data
+    return response.data.users || []  // Extract the users array from the response
   },
   getById: async (id) => {
     const response = await api.get(`/users/${id}`)
-    return response.data
+    return response.data.user
   },
   create: async (data) => {
     const response = await api.post('/users', data)
-    return response.data
+    return response.data.user
   },
   update: async (id, data) => {
     const response = await api.put(`/users/${id}`, data)
-    return response.data
+    return response.data.user
   },
   delete: async (id) => {
     const response = await api.delete(`/users/${id}`)
@@ -288,7 +288,7 @@ export const usersAPI = {
   },
   getInstances: async (id) => {
     const response = await api.get(`/users/${id}/instances`)
-    return response.data
+    return response.data.instances || []
   },
 }
 

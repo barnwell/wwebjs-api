@@ -465,6 +465,7 @@ export default function InstanceDetails({ user }) {
       {showEditModal && (
         <EditInstanceModal
           instance={instance}
+          user={user}
           onClose={() => setShowEditModal(false)}
           onSuccess={() => setShowEditModal(false)}
         />
