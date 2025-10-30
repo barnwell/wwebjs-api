@@ -80,6 +80,54 @@ function buildEnvVars(config) {
   return env;
 }
 
+// Helper function to check session status for an instance
+async function checkInstanceSessionStatus(instance) {
+  try {
+    if (!instance.container_id || instance.status !== 'running') {
+      return 'disconnected';
+    }
+    
+    const config = typeof instance.config === 'string' ? JSON.parse(instance.config) : instance.config;
+    const containerName = `wwebjs-${instance.name}`;
+    
+    // Get all sessions for this instance
+    const sessionsUrl = `http://${containerName}:3000/session/getSessions`;
+    const sessionsResponse = await axios.get(sessionsUrl, {
+      headers: {
+        'x-api-key': config.API_KEY
+      }
+    });
+    
+    if (!sessionsResponse.data.success || !sessionsResponse.data.result || sessionsResponse.data.result.length === 0) {
+      return 'disconnected';
+    }
+    
+    // Check if any session is connected
+    for (const sessionId of sessionsResponse.data.result) {
+      try {
+        const statusUrl = `http://${containerName}:3000/session/status/${sessionId}`;
+        const statusResponse = await axios.get(statusUrl, {
+          headers: {
+            'x-api-key': config.API_KEY
+          }
+        });
+        
+        if (statusResponse.data.success && statusResponse.data.state === 'CONNECTED') {
+          return 'connected';
+        }
+      } catch (error) {
+        // Continue checking other sessions
+        continue;
+      }
+    }
+    
+    return 'disconnected';
+  } catch (error) {
+    logger.debug(`Error checking session status for instance ${instance.name}:`, error.message);
+    return 'disconnected';
+  }
+}
+
 // GET default instance configuration
 router.get('/default-config', (req, res) => {
   try {
@@ -186,10 +234,17 @@ router.get('/', async (req, res) => {
     
     const result = await db.query(query, params);
     
-    // Parse JSON config for each instance
-    const instances = result.rows.map(instance => ({
-      ...instance,
-      config: JSON.parse(instance.config)
+    // Parse JSON config for each instance and check session status
+    const instances = await Promise.all(result.rows.map(async (instance) => {
+      const parsedInstance = {
+        ...instance,
+        config: JSON.parse(instance.config)
+      };
+      
+      // Check session status dynamically
+      parsedInstance.session_status = await checkInstanceSessionStatus(parsedInstance);
+      
+      return parsedInstance;
     }));
     
     res.json(instances);
@@ -222,6 +277,37 @@ router.get('/:id', async (req, res) => {
     
     const instance = result.rows[0];
     instance.config = JSON.parse(instance.config);
+    
+    // Check session status dynamically
+    instance.session_status = await checkInstanceSessionStatus(instance);
+    
+    // Add container inspection data if container exists
+    if (instance.container_id) {
+      try {
+        const containerInfo = await inspectContainer(instance.container_id);
+        instance.container_info = {
+          image: containerInfo.Config?.Image || 'Unknown',
+          image_id: containerInfo.Image || 'Unknown',
+          created: containerInfo.Created,
+          platform: containerInfo.Platform || 'Unknown',
+          // Extract build info from labels if available
+          build_info: {
+            version: containerInfo.Config?.Labels?.['org.opencontainers.image.version'] || 
+                    containerInfo.Config?.Labels?.['version'] || 'Unknown',
+            revision: containerInfo.Config?.Labels?.['org.opencontainers.image.revision'] || 
+                     containerInfo.Config?.Labels?.['git.commit'] || 'Unknown',
+            build_date: containerInfo.Config?.Labels?.['org.opencontainers.image.created'] || 
+                       containerInfo.Config?.Labels?.['build.date'] || 'Unknown'
+          }
+        };
+      } catch (error) {
+        logger.warn(`Failed to inspect container ${instance.container_id}:`, error.message);
+        instance.container_info = null;
+      }
+    } else {
+      instance.container_info = null;
+    }
+    
     res.json(instance);
   } catch (error) {
     logger.error('Error fetching instance:', error);
@@ -232,7 +318,7 @@ router.get('/:id', async (req, res) => {
 // CREATE new instance
 router.post('/', async (req, res) => {
   try {
-    const { name, description, config, templateId, port: requestedPort } = req.body;
+    const { name, description, config, templateId, port: requestedPort, assignedUserId } = req.body;
     
     if (!name || !config) {
       return res.status(400).json({ error: 'Name and config are required' });
@@ -240,6 +326,20 @@ router.post('/', async (req, res) => {
     
     const db = getDatabase();
     const id = uuidv4();
+
+    // Handle user assignment - only admins can assign to other users
+    let targetUserId = req.user.id; // Default to current user
+    if (assignedUserId && req.user.role === 'admin') {
+      // Verify the target user exists
+      const userCheck = await db.query('SELECT id FROM users WHERE id = $1', [assignedUserId]);
+      if (userCheck.rows.length === 0) {
+        return res.status(400).json({ error: 'Target user not found' });
+      }
+      targetUserId = assignedUserId;
+    } else if (assignedUserId && req.user.role !== 'admin') {
+      // Non-admin tried to assign to someone else
+      return res.status(403).json({ error: 'Only admins can assign instances to other users' });
+    }
     
     // Handle port assignment
     let port;
@@ -284,7 +384,7 @@ router.post('/', async (req, res) => {
     await db.query(`
       INSERT INTO instances (id, name, description, port, config, status, user_id)
       VALUES ($1, $2, $3, $4, $5, 'stopped', $6)
-    `, [id, name, description || '', port, JSON.stringify(finalConfig), req.user.id]);
+    `, [id, name, description || '', port, JSON.stringify(finalConfig), targetUserId]);
     
     const instanceResult = await db.query(`
       SELECT i.*, u.username as owner_username, u.email as owner_email
@@ -314,7 +414,7 @@ router.patch('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Instance not found' });
     }
     
-    const { name, description, config, port: requestedPort } = req.body;
+    const { name, description, config, port: requestedPort, assignedUserId } = req.body;
     
     const db = getDatabase();
     const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
@@ -325,6 +425,20 @@ router.patch('/:id', async (req, res) => {
     
     const instance = result.rows[0];
     const currentConfig = JSON.parse(instance.config);
+
+    // Handle user assignment change - only admins can reassign instances
+    let targetUserId = instance.user_id; // Default to current assigned user
+    if (assignedUserId && req.user.role === 'admin') {
+      // Verify the target user exists
+      const userCheck = await db.query('SELECT id FROM users WHERE id = $1', [assignedUserId]);
+      if (userCheck.rows.length === 0) {
+        return res.status(400).json({ error: 'Target user not found' });
+      }
+      targetUserId = assignedUserId;
+    } else if (assignedUserId && req.user.role !== 'admin') {
+      // Non-admin tried to assign to someone else
+      return res.status(403).json({ error: 'Only admins can reassign instances to other users' });
+    }
     
     // Handle port change if requested
     let port = instance.port;
@@ -364,13 +478,15 @@ router.patch('/:id', async (req, res) => {
           description = COALESCE($2, description),
           port = $3,
           config = $4,
+          user_id = $5,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $5
+      WHERE id = $6
     `, [
       name || instance.name,
       description !== undefined ? description : instance.description,
       port,
       JSON.stringify(updatedConfig),
+      targetUserId,
       instance.id
     ]);
     
@@ -1202,6 +1318,205 @@ router.get('/:id/debug-connectivity', async (req, res) => {
     });
   } catch (error) {
     logger.error('Error in debug connectivity route:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST create a new session
+router.post('/:id/sessions/:sessionId', async (req, res) => {
+  try {
+    // Check ownership
+    const hasAccess = await checkInstanceOwnership(req.params.id, req.user.id, req.user.role);
+    if (!hasAccess) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const db = getDatabase();
+    const result = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+    
+    const instance = result.rows[0];
+    const config = JSON.parse(instance.config);
+    
+    if (instance.status !== 'running') {
+      return res.status(400).json({ error: 'Instance must be running to create session' });
+    }
+    
+    // Create session in wwebjs-api instance
+    const containerName = `wwebjs-${instance.name}`;
+    const createUrl = `http://${containerName}:3000/session/start/${req.params.sessionId}`;
+    
+    const requestBody = {};
+    if (req.body.webhookUrl) {
+      requestBody.webhookUrl = req.body.webhookUrl;
+    }
+    
+    const response = await axios.post(createUrl, requestBody, {
+      headers: {
+        'x-api-key': config.API_KEY
+      }
+    });
+    
+    res.json(response.data);
+  } catch (error) {
+    logger.error('Error creating session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT update instance Docker image (admin only)
+router.put('/:id/image', async (req, res) => {
+  try {
+    // Only admins can change Docker images
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { image } = req.body;
+    
+    if (!image) {
+      return res.status(400).json({ error: 'Image name is required' });
+    }
+
+    const db = getDatabase();
+    
+    // Get current instance
+    const instanceResult = await db.query('SELECT * FROM instances WHERE id = $1', [req.params.id]);
+    if (instanceResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+
+    const instance = instanceResult.rows[0];
+    
+    // If container is running, we need to recreate it
+    if (instance.container_id && instance.status === 'running') {
+      try {
+        // Stop the current container
+        await stopContainer(instance.container_id);
+        
+        // Remove the old container
+        await removeContainer(instance.container_id, true);
+        
+        // Create new container with new image
+        const config = JSON.parse(instance.config);
+        
+        // Use consistent session path (same as initial creation)
+        const sessionsPath = path.resolve(process.env.WWEBJS_SESSIONS_PATH || './instances', instance.name);
+        
+        const container = await createContainer({
+          image: image,
+          name: `wwebjs-${instance.name}`,
+          env: buildEnvVars(config),
+          exposedPorts: { '3000/tcp': {} },
+          portBindings: { '3000/tcp': [{ HostPort: instance.port.toString() }] },
+          volumes: [`${sessionsPath}:/usr/src/app/sessions`],
+          labels: {
+            'orchestrator.instance.id': instance.id,
+            'orchestrator.instance.name': instance.name
+          }
+        });
+
+        // Start the new container
+        await startContainer(container.id);
+
+        // Update database with new container ID
+        await db.query(`
+          UPDATE instances 
+          SET container_id = $1, last_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [container.id, req.params.id]);
+
+        logger.info(`Instance ${instance.name} updated to use image: ${image}`);
+        
+        broadcast('instance_updated', { 
+          instance: { ...instance, container_id: container.id },
+          message: `Updated to image: ${image}`
+        });
+
+        res.json({ 
+          success: true, 
+          message: `Instance updated to use image: ${image}`,
+          container_id: container.id
+        });
+
+      } catch (error) {
+        logger.error(`Error updating instance ${instance.name} image:`, error);
+        res.status(500).json({ error: `Failed to update container: ${error.message}` });
+      }
+    } else {
+      // Instance not running, just log the change for next start
+      logger.info(`Instance ${instance.name} will use image ${image} on next start`);
+      res.json({ 
+        success: true, 
+        message: `Instance will use image ${image} on next start`
+      });
+    }
+
+  } catch (error) {
+    logger.error('Error updating instance image:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT update instance container ID (admin only) - for fixing lost containers
+router.put('/:id/container-id', async (req, res) => {
+  try {
+    // Only admins can update container IDs
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { container_id } = req.body;
+    
+    if (!container_id) {
+      return res.status(400).json({ error: 'Container ID is required' });
+    }
+
+    const db = getDatabase();
+    
+    // Verify the container exists
+    try {
+      await inspectContainer(container_id);
+    } catch (error) {
+      return res.status(400).json({ error: 'Container not found or not accessible' });
+    }
+    
+    // Update the database
+    const result = await db.query(`
+      UPDATE instances 
+      SET container_id = $1, status = 'running', last_started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+      RETURNING *
+    `, [container_id, req.params.id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Instance not found' });
+    }
+
+    const instance = result.rows[0];
+    logger.info(`Container ID updated for instance ${instance.name}: ${container_id}`);
+    
+    broadcast('instance_updated', { 
+      instance,
+      message: `Container ID updated: ${container_id}`
+    });
+
+    res.json({ 
+      success: true, 
+      message: `Container ID updated successfully`,
+      instance: {
+        id: instance.id,
+        name: instance.name,
+        container_id: instance.container_id,
+        status: instance.status
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error updating container ID:', error);
     res.status(500).json({ error: error.message });
   }
 });

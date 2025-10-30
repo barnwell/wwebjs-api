@@ -142,6 +142,13 @@ export const instancesAPI = {
     const response = await api.get(`/instances/${id}/resources`)
     return response.data
   },
+
+  createSession: async (id, sessionId, webhookUrl) => {
+    const response = await api.post(`/instances/${id}/sessions/${sessionId}`, {
+      webhookUrl
+    })
+    return response.data
+  },
   // Port management
   checkPortAvailability: async (port) => {
     const response = await api.get(`/instances/port-availability/${port}`)
@@ -153,6 +160,10 @@ export const instancesAPI = {
   },
   getAvailablePorts: async () => {
     const response = await api.get('/instances/available-ports')
+    return response.data
+  },
+  updateImage: async (id, data) => {
+    const response = await api.put(`/instances/${id}/image`, data)
     return response.data
   },
 }
@@ -197,6 +208,10 @@ export const metricsAPI = {
   },
   cleanup: async (daysToKeep = 30) => {
     const response = await api.delete(`/metrics/cleanup?daysToKeep=${daysToKeep}`)
+    return response.data
+  },
+  getServer: async () => {
+    const response = await api.get('/metrics/server')
     return response.data
   },
 }
@@ -253,19 +268,19 @@ export const authAPI = {
 export const usersAPI = {
   getAll: async () => {
     const response = await api.get('/users')
-    return response.data
+    return response.data.users || []  // Extract the users array from the response
   },
   getById: async (id) => {
     const response = await api.get(`/users/${id}`)
-    return response.data
+    return response.data.user
   },
   create: async (data) => {
     const response = await api.post('/users', data)
-    return response.data
+    return response.data.user
   },
   update: async (id, data) => {
     const response = await api.put(`/users/${id}`, data)
-    return response.data
+    return response.data.user
   },
   delete: async (id) => {
     const response = await api.delete(`/users/${id}`)
@@ -273,7 +288,7 @@ export const usersAPI = {
   },
   getInstances: async (id) => {
     const response = await api.get(`/users/${id}/instances`)
-    return response.data
+    return response.data.instances || []
   },
 }
 

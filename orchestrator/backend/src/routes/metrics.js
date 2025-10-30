@@ -4,6 +4,7 @@ const { getContainerStats } = require('../docker');
 const metricsCollector = require('../services/metricsCollector');
 const { logger } = require('../utils/logger');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const os = require('os');
 
 const router = express.Router();
 
@@ -182,6 +183,53 @@ router.delete('/cleanup', requireAdmin, async (req, res) => {
     res.json({ message: `Cleaned up ${deletedCount} old metrics records` });
   } catch (error) {
     logger.error('Error cleaning up metrics:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET server resource usage
+router.get('/server', async (req, res) => {
+  try {
+    const totalMemory = os.totalmem() / (1024 * 1024); // Convert to MB
+    const freeMemory = os.freemem() / (1024 * 1024); // Convert to MB
+    const usedMemory = totalMemory - freeMemory;
+    const memoryUsagePercent = (usedMemory / totalMemory) * 100;
+    
+    const cpus = os.cpus();
+    const loadAvg = os.loadavg();
+    const cpuUsage = (loadAvg[0] / cpus.length) * 100; // 1-minute load average
+    
+    // Get total memory usage from all running instances
+    const db = getDatabase();
+    const instancesResult = await db.query(`
+      SELECT SUM(memory_usage) as total_instance_memory
+      FROM (
+        SELECT DISTINCT ON (instance_id) memory_usage
+        FROM metrics
+        WHERE timestamp >= NOW() - INTERVAL '5 minutes'
+        ORDER BY instance_id, timestamp DESC
+      ) latest_metrics
+    `);
+    
+    const totalInstanceMemory = parseFloat(instancesResult.rows[0]?.total_instance_memory || 0);
+    
+    res.json({
+      memory: {
+        total: Math.round(totalMemory),
+        used: Math.round(usedMemory),
+        free: Math.round(freeMemory),
+        usagePercent: Math.round(memoryUsagePercent * 100) / 100,
+        instanceMemory: Math.round(totalInstanceMemory)
+      },
+      cpu: {
+        usage: Math.round(cpuUsage * 100) / 100,
+        cores: cpus.length,
+        loadAverage: loadAvg
+      },
+      uptime: os.uptime()
+    });
+  } catch (error) {
+    logger.error('Error fetching server resource usage:', error);
     res.status(500).json({ error: error.message });
   }
 });

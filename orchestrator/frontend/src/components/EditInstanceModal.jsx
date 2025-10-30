@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, CheckCircle, XCircle, Loader, Save, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { instancesAPI } from '../api/client'
+import { instancesAPI, usersAPI } from '../api/client'
 
-export default function EditInstanceModal({ instance, onClose, onSuccess }) {
+export default function EditInstanceModal({ instance, onClose, onSuccess, user }) {
   const queryClient = useQueryClient()
   
   // Fetch port range configuration
@@ -12,6 +12,16 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
     queryKey: ['port-range'],
     queryFn: instancesAPI.getPortRange,
   })
+
+  // Fetch users for admin assignment (only for admins)
+  const { data: usersData, isLoading: isLoadingUsers, error: usersError } = useQuery({
+    queryKey: ['users'],
+    queryFn: usersAPI.getAll,
+    enabled: user?.role === 'admin', // Only fetch if user is admin
+  })
+  
+  // Ensure users is always an array
+  const users = Array.isArray(usersData) ? usersData : []
   
   const [formData, setFormData] = useState({
     name: '',
@@ -19,6 +29,7 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
     config: {},
     port: '',
     useCustomPort: false,
+    assignedUserId: '', // For admin user assignment
   })
 
   const [portStatus, setPortStatus] = useState({
@@ -39,6 +50,7 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
         config: { ...instance.config },
         port: instance.port?.toString() || '',
         useCustomPort: false, // Start with auto-assign
+        assignedUserId: instance.user_id || '', // Current assigned user
       })
       setHasChanges(false)
     }
@@ -86,7 +98,8 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
       name: formData.name,
       description: formData.description,
       config: formData.config,
-      ...(formData.useCustomPort && formData.port && { port: parseInt(formData.port) })
+      ...(formData.useCustomPort && formData.port && { port: parseInt(formData.port) }),
+      ...(user?.role === 'admin' && formData.assignedUserId && formData.assignedUserId !== instance.user_id && { assignedUserId: formData.assignedUserId })
     }
     
     updateMutation.mutate(submissionData)
@@ -236,6 +249,36 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
               placeholder="Optional description..."
             />
           </div>
+
+          {/* User Assignment (Admin Only) */}
+          {user?.role === 'admin' && (
+            <div>
+              <label className="label">Assigned User</label>
+              <select
+                value={formData.assignedUserId}
+                onChange={(e) => handleFieldChange('assignedUserId', e.target.value)}
+                className="input w-full"
+              >
+                {isLoadingUsers ? (
+                  <option disabled>Loading users...</option>
+                ) : usersError ? (
+                  <option disabled>Error loading users</option>
+                ) : users.length === 0 ? (
+                  <option disabled>No users available</option>
+                ) : (
+                  users.map(u => (
+                    <option key={u.id} value={u.id}>
+                      {u.username} ({u.email}) - {u.role}
+                      {u.id === instance.user_id ? ' (current)' : ''}
+                    </option>
+                  ))
+                )}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Select a user to assign or reassign this instance to them.
+              </p>
+            </div>
+          )}
 
           {/* Port Selection */}
           <div>
@@ -405,10 +448,10 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
                       value={formData.config.DISABLED_CALLBACKS || ''}
                       onChange={(e) => handleConfigChange('DISABLED_CALLBACKS', e.target.value)}
                       className="input w-full"
-                      placeholder="message_ack|message_reaction|unread_count (separated by |)"
+                      placeholder="message_ack|message_status|message_reaction|unread_count (separated by |)"
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      Callbacks to disable, separated by | (e.g., message_ack|message_reaction|unread_count)
+                      Callbacks to disable, separated by | (e.g., message_ack|message_status|message_reaction|unread_count)
                     </p>
                   </div>
 
@@ -524,6 +567,21 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }) {
               <div>
                 <h4 className="font-medium text-sm text-gray-700 mb-3">Advanced Configuration</h4>
                 <div className="space-y-3">
+                  <div>
+                    <label className="label">Min Memory Required (MB)</label>
+                    <input
+                      type="number"
+                      value={formData.config.MIN_MEMORY_REQUIRED || ''}
+                      onChange={(e) => handleConfigChange('MIN_MEMORY_REQUIRED', e.target.value)}
+                      className="input w-full"
+                      placeholder="2048"
+                      min="512"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Minimum memory required for the instance to start (in MB)
+                    </p>
+                  </div>
+
                   <div>
                     <label className="label">Enable WebSocket</label>
                     <select

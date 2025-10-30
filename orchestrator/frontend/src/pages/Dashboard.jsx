@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Server, Activity, AlertCircle, CheckCircle, XCircle } from 'lucide-react'
+import { Server, Activity, AlertCircle, CheckCircle, XCircle, Cpu, HardDrive } from 'lucide-react'
 import { instancesAPI, metricsAPI } from '../api/client'
 import { Link } from 'react-router-dom'
 
@@ -13,6 +13,12 @@ export default function Dashboard() {
   const { data: latestMetrics = [], error: metricsError } = useQuery({
     queryKey: ['metrics', 'latest'],
     queryFn: metricsAPI.getLatest,
+    refetchInterval: 5000,
+  })
+
+  const { data: serverResources, error: serverResourcesError } = useQuery({
+    queryKey: ['metrics', 'server'],
+    queryFn: metricsAPI.getServer,
     refetchInterval: 5000,
   })
 
@@ -48,6 +54,53 @@ export default function Dashboard() {
   return (
     <div>
       <h1 className="text-3xl font-bold mb-8">Dashboard</h1>
+
+      {/* Server Resource Usage */}
+      {serverResources && (
+        <div className="card mb-8">
+          <h2 className="text-xl font-semibold mb-4">Server Resource Usage</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-blue-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Cpu className="w-5 h-5 text-blue-600" />
+                <span className="text-sm font-medium text-blue-800">CPU Usage</span>
+              </div>
+              <div className="text-2xl font-bold text-blue-900">
+                {serverResources.cpu?.usage || 0}%
+              </div>
+              <div className="text-sm text-blue-700">
+                {serverResources.cpu?.cores || 0} cores
+              </div>
+            </div>
+
+            <div className="bg-green-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <HardDrive className="w-5 h-5 text-green-600" />
+                <span className="text-sm font-medium text-green-800">Memory Usage</span>
+              </div>
+              <div className="text-2xl font-bold text-green-900">
+                {serverResources.memory?.usagePercent || 0}%
+              </div>
+              <div className="text-sm text-green-700">
+                {serverResources.memory?.used || 0}MB / {serverResources.memory?.total || 0}MB
+              </div>
+            </div>
+
+            <div className="bg-purple-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Server className="w-5 h-5 text-purple-600" />
+                <span className="text-sm font-medium text-purple-800">Instance Memory</span>
+              </div>
+              <div className="text-2xl font-bold text-purple-900">
+                {serverResources.memory?.instanceMemory || 0}MB
+              </div>
+              <div className="text-sm text-purple-700">
+                Used by instances
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

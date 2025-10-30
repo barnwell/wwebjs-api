@@ -51,6 +51,7 @@ sessionRouter.get('/terminateInactive', sessionController.terminateInactiveSessi
 sessionRouter.get('/terminateAll', sessionController.terminateAllSessions)
 sessionRouter.get('/getPageScreenshot/:sessionId', middleware.sessionNameValidation, sessionController.getPageScreenshot)
 sessionRouter.get('/webhookDebug/:sessionId', middleware.sessionNameValidation, sessionController.getWebhookDebugInfo)
+sessionRouter.get('/backup', sessionController.downloadSessionsBackup)
 
 /**
  * ================

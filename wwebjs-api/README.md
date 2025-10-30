@@ -147,6 +147,8 @@ For example, if you have the sessionId defined as `DEMO`, the environment variab
 
 By setting the `DISABLED_CALLBACKS` environment variable you can specify what events you are **not** willing to receive on your webhook.
 
+**Note**: The `message_status` callback is available for WhatsApp status updates (stories). Regular messages trigger the `message` event, while status messages trigger the `message_status` event. By default, `message_status` is disabled and must be explicitly enabled by removing it from `DISABLED_CALLBACKS`.
+
 By setting the `ENABLE_WEBHOOK` environment to `FALSE` you can disable webhook dispatching. This will help you if you want to switch to websocket method(see below).
 
 ### Scanning QR code

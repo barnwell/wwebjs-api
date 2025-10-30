@@ -1,5 +1,5 @@
 const axios = require('axios')
-const { globalApiKey, disabledCallbacks, enableWebHook } = require('./config')
+const { globalApiKey, disabledCallbacks, enableWebHook, minMemoryRequired } = require('./config')
 const { logger } = require('./logger')
 const ChatFactory = require('whatsapp-web.js/src/factories/ChatFactory')
 const Client = require('whatsapp-web.js').Client
@@ -76,6 +76,36 @@ const exposeFunctionIfAbsent = async (page, name, fn) => {
     return
   }
   await page.exposeFunction(name, fn)
+}
+
+// Function to check available system memory
+const checkAvailableMemory = () => {
+  try {
+    const os = require('os')
+    const totalMemory = os.totalmem() / (1024 * 1024) // Convert to MB
+    const freeMemory = os.freemem() / (1024 * 1024) // Convert to MB
+    const availableMemory = freeMemory
+    
+    logger.debug({ 
+      totalMemory: Math.round(totalMemory), 
+      freeMemory: Math.round(freeMemory), 
+      availableMemory: Math.round(availableMemory),
+      minMemoryRequired 
+    }, 'Memory check')
+    
+    return {
+      available: availableMemory,
+      total: totalMemory,
+      hasEnoughMemory: availableMemory >= minMemoryRequired
+    }
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to check available memory')
+    return {
+      available: 0,
+      total: 0,
+      hasEnoughMemory: false
+    }
+  }
 }
 
 const patchWWebLibrary = async (client) => {
@@ -158,5 +188,6 @@ module.exports = {
   decodeBase64,
   sleep,
   exposeFunctionIfAbsent,
-  patchWWebLibrary
+  patchWWebLibrary,
+  checkAvailableMemory
 }

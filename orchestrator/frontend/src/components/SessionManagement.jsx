@@ -10,13 +10,17 @@ import {
   Loader,
   QrCode,
   User,
-  Phone
+  Phone,
+  Plus
 } from 'lucide-react'
 import { instancesAPI } from '../api/client'
 
 export default function SessionManagement({ instanceId }) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [qrModalSession, setQrModalSession] = useState(null)
+  const [newSessionId, setNewSessionId] = useState('')
+  const [newSessionWebhookUrl, setNewSessionWebhookUrl] = useState('')
+  const [isCreatingSession, setIsCreatingSession] = useState(false)
   const queryClient = useQueryClient()
 
   // Fetch sessions
@@ -71,6 +75,16 @@ export default function SessionManagement({ instanceId }) {
     },
   })
 
+  // Create session mutation
+  const createSessionMutation = useMutation({
+    mutationFn: ({ sessionId, webhookUrl }) => instancesAPI.createSession(instanceId, sessionId, webhookUrl),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['sessions', instanceId])
+      setNewSessionId('')
+      setNewSessionWebhookUrl('')
+    },
+  })
+
   const handleDeleteSession = async (sessionId) => {
     if (window.confirm(`Are you sure you want to delete session "${sessionId}"?`)) {
       await deleteSessionMutation.mutateAsync(sessionId)
@@ -85,6 +99,23 @@ export default function SessionManagement({ instanceId }) {
       } finally {
         setIsDeleting(false)
       }
+    }
+  }
+
+  const handleCreateSession = async () => {
+    if (!newSessionId.trim()) {
+      alert('Please enter a session ID')
+      return
+    }
+    
+    setIsCreatingSession(true)
+    try {
+      await createSessionMutation.mutateAsync({ 
+        sessionId: newSessionId.trim(), 
+        webhookUrl: newSessionWebhookUrl.trim() || undefined 
+      })
+    } finally {
+      setIsCreatingSession(false)
     }
   }
 
@@ -147,6 +178,40 @@ export default function SessionManagement({ instanceId }) {
           </div>
         </div>
 
+        {/* Create New Session */}
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+          <h4 className="text-sm font-medium text-gray-700 mb-3">Create New Session</h4>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newSessionId}
+                onChange={(e) => setNewSessionId(e.target.value)}
+                placeholder="Enter session ID (e.g., session1, user123)"
+                className="input flex-1"
+              />
+              <button
+                onClick={handleCreateSession}
+                disabled={isCreatingSession || !newSessionId.trim()}
+                className="btn btn-primary flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                {isCreatingSession ? 'Creating...' : 'Create Session'}
+              </button>
+            </div>
+            <input
+              type="url"
+              value={newSessionWebhookUrl}
+              onChange={(e) => setNewSessionWebhookUrl(e.target.value)}
+              placeholder="Webhook URL (optional) - e.g., https://your-app.com/webhook"
+              className="input w-full"
+            />
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            After creating a session, scan the QR code to connect your WhatsApp account. The webhook URL will receive WhatsApp events.
+          </p>
+        </div>
+
         {sessionsLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader className="w-6 h-6 animate-spin text-blue-500" />
@@ -194,6 +259,14 @@ export default function SessionManagement({ instanceId }) {
                                 <User className="w-3 h-3 text-green-500" />
                                 <span className="text-gray-700">
                                   {classInfo.pushname}
+                                </span>
+                              </div>
+                            )}
+                            {classInfo.webhookUrl && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <span className="w-3 h-3 text-purple-500">🔗</span>
+                                <span className="text-gray-700 font-mono text-xs max-w-xs" title={classInfo.webhookUrl}>
+                                  {classInfo.webhookUrl}
                                 </span>
                               </div>
                             )}

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { X, CheckCircle, XCircle, Loader } from 'lucide-react'
+import { X, CheckCircle, XCircle, Loader, Key, Copy } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { instancesAPI } from '../api/client'
+import { instancesAPI, usersAPI } from '../api/client'
 
-export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
+export default function CreateInstanceModal({ templates, onClose, onSuccess, user }) {
   // Fetch default configuration from backend
   const { data: defaultConfig, isLoading: isLoadingConfig } = useQuery({
     queryKey: ['default-config'],
@@ -18,6 +18,13 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
     queryFn: instancesAPI.getPortRange,
   })
 
+  // Fetch users for admin assignment (only for admins)
+  const { data: users = [], isLoading: isLoadingUsers } = useQuery({
+    queryKey: ['users'],
+    queryFn: usersAPI.getAll,
+    enabled: user?.role === 'admin', // Only fetch if user is admin
+  })
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -25,6 +32,7 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
     config: {},
     port: '', // Add port field
     useCustomPort: false, // Add custom port toggle
+    assignedUserId: '', // For admin user assignment
   })
 
   const [portStatus, setPortStatus] = useState({
@@ -34,6 +42,39 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
   })
 
   const [nameError, setNameError] = useState('')
+
+  // Generate a secure API key
+  const generateApiKey = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    let result = ''
+    for (let i = 0; i < 32; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return result
+  }
+
+  // Handle API key generation
+  const handleGenerateApiKey = () => {
+    const newApiKey = generateApiKey()
+    setFormData(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        API_KEY: newApiKey
+      }
+    }))
+    toast.success('API key generated successfully')
+  }
+
+  // Handle copying API key to clipboard
+  const handleCopyApiKey = async () => {
+    try {
+      await navigator.clipboard.writeText(formData.config.API_KEY)
+      toast.success('API key copied to clipboard')
+    } catch (error) {
+      toast.error('Failed to copy API key')
+    }
+  }
 
   // Validate instance name
   const validateInstanceName = (name) => {
@@ -109,7 +150,8 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
       description: formData.description,
       templateId: formData.templateId || undefined,
       config: formData.config,
-      ...(formData.useCustomPort && formData.port && { port: parseInt(formData.port) })
+      ...(formData.useCustomPort && formData.port && { port: parseInt(formData.port) }),
+      ...(user?.role === 'admin' && formData.assignedUserId && { assignedUserId: formData.assignedUserId })
     }
     
     createMutation.mutate(submissionData)
@@ -250,6 +292,32 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
             />
           </div>
 
+          {/* User Assignment (Admin Only) */}
+          {user?.role === 'admin' && (
+            <div>
+              <label className="label">Assign to User</label>
+              <select
+                value={formData.assignedUserId}
+                onChange={(e) => setFormData({ ...formData, assignedUserId: e.target.value })}
+                className="input w-full"
+              >
+                <option value="">Assign to yourself</option>
+                {isLoadingUsers ? (
+                  <option disabled>Loading users...</option>
+                ) : (
+                  users.map(u => (
+                    <option key={u.id} value={u.id}>
+                      {u.username} ({u.email}) - {u.role}
+                    </option>
+                  ))
+                )}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Leave empty to assign the instance to yourself. Select a user to assign it to them.
+              </p>
+            </div>
+          )}
+
           {/* Port Selection */}
           <div>
             <label className="label">Port Assignment</label>
@@ -365,14 +433,36 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
                 <div className="space-y-3">
                   <div>
                     <label className="label">API Key *</label>
-                    <input
-                      type="text"
-                      value={formData.config.API_KEY}
-                      onChange={(e) => handleConfigChange('API_KEY', e.target.value)}
-                      className="input w-full"
-                      placeholder="SET_YOUR_API_KEY_HERE"
-                      required
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={formData.config.API_KEY}
+                        onChange={(e) => handleConfigChange('API_KEY', e.target.value)}
+                        className="input flex-1"
+                        placeholder="SET_YOUR_API_KEY_HERE"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={handleGenerateApiKey}
+                        className="btn btn-secondary flex items-center gap-1 px-3"
+                        title="Generate new API key"
+                      >
+                        <Key className="w-4 h-4" />
+                        Generate
+                      </button>
+                      {formData.config.API_KEY && formData.config.API_KEY !== 'SET_YOUR_API_KEY_HERE' && (
+                        <button
+                          type="button"
+                          onClick={handleCopyApiKey}
+                          className="btn btn-secondary flex items-center gap-1 px-3"
+                          title="Copy API key to clipboard"
+                        >
+                          <Copy className="w-4 h-4" />
+                          Copy
+                        </button>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-500 mt-1">
                       Required for accessing wwebjs-api endpoints (sessions, QR codes, etc.)
                     </p>
@@ -439,10 +529,10 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
                       value={formData.config.DISABLED_CALLBACKS}
                       onChange={(e) => handleConfigChange('DISABLED_CALLBACKS', e.target.value)}
                       className="input w-full"
-                      placeholder="message_ack|message_reaction|unread_count (separated by |)"
+                      placeholder="message_ack|message_status|message_reaction|unread_count (separated by |)"
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      Callbacks to disable, separated by | (e.g., message_ack|message_reaction|unread_count)
+                      Callbacks to disable, separated by | (e.g., message_ack|message_status|message_reaction|unread_count)
                     </p>
                   </div>
 
@@ -558,6 +648,21 @@ export default function CreateInstanceModal({ templates, onClose, onSuccess }) {
               <div>
                 <h4 className="font-medium text-sm text-gray-700 mb-3">Advanced Configuration</h4>
                 <div className="space-y-3">
+                  <div>
+                    <label className="label">Min Memory Required (MB)</label>
+                    <input
+                      type="number"
+                      value={formData.config.MIN_MEMORY_REQUIRED}
+                      onChange={(e) => handleConfigChange('MIN_MEMORY_REQUIRED', e.target.value)}
+                      className="input w-full"
+                      placeholder="2048"
+                      min="512"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Minimum memory required for the instance to start (in MB)
+                    </p>
+                  </div>
+
                   <div>
                     <label className="label">Enable WebSocket</label>
                     <select

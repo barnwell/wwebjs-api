@@ -1,7 +1,11 @@
 const qr = require('qr-image')
+const fs = require('fs')
+const path = require('path')
+const archiver = require('archiver')
 const { setupSession, deleteSession, reloadSession, validateSession, flushSessions, destroySession, sessions, sessionWebhookUrls } = require('../sessions')
-const { sendErrorResponse, waitForNestedObject, exposeFunctionIfAbsent } = require('../utils')
+const { sendErrorResponse, waitForNestedObject, exposeFunctionIfAbsent, checkAvailableMemory } = require('../utils')
 const { logger } = require('../logger')
+const { sessionFolderPath } = require('../config')
 
 /**
  * Starts a session for the given session ID.
@@ -27,6 +31,17 @@ const startSession = async (req, res) => {
     } catch (error) {
       return sendErrorResponse(res, 400, 'Invalid webhook URL format')
     }
+  }
+  
+  // Check available memory before creating session
+  const memoryCheck = checkAvailableMemory()
+  if (!memoryCheck.hasEnoughMemory) {
+    logger.warn({ 
+      sessionId, 
+      availableMemory: Math.round(memoryCheck.available),
+      minMemoryRequired: memoryCheck.minMemoryRequired 
+    }, 'Insufficient memory to create session')
+    return sendErrorResponse(res, 507, `Insufficient memory. Available: ${Math.round(memoryCheck.available)}MB, Required: ${memoryCheck.minMemoryRequired}MB`)
   }
   
   try {
@@ -502,6 +517,64 @@ const getWebhookDebugInfo = async (req, res) => {
   }
 }
 
+/**
+ * Downloads a backup of all sessions as a ZIP file.
+ *
+ * @function
+ * @async
+ * @param {Object} req - The HTTP request object.
+ * @param {Object} res - The HTTP response object.
+ * @returns {Promise<void>}
+ * @throws {Error} If there was an error creating the backup.
+ */
+const downloadSessionsBackup = async (req, res) => {
+  // #swagger.summary = 'Download sessions backup'
+  // #swagger.description = 'Downloads a ZIP backup of all session data.'
+  try {
+    const archive = archiver('zip', {
+      zlib: { level: 9 } // Maximum compression
+    })
+
+    // Set response headers
+    res.setHeader('Content-Type', 'application/zip')
+    res.setHeader('Content-Disposition', `attachment; filename="sessions-backup-${new Date().toISOString().split('T')[0]}.zip"`)
+
+    // Pipe archive to response
+    archive.pipe(res)
+
+    // Add all session folders to the archive
+    if (fs.existsSync(sessionFolderPath)) {
+      const files = fs.readdirSync(sessionFolderPath)
+      for (const file of files) {
+        const filePath = path.join(sessionFolderPath, file)
+        const stat = fs.statSync(filePath)
+        
+        if (stat.isDirectory() && file.startsWith('session-')) {
+          archive.directory(filePath, file)
+        } else if (file === 'webhook-urls.json') {
+          archive.file(filePath, { name: file })
+        }
+      }
+    }
+
+    // Add webhook URLs file if it exists
+    const webhookUrlsPath = path.join(sessionFolderPath, 'webhook-urls.json')
+    if (fs.existsSync(webhookUrlsPath)) {
+      archive.file(webhookUrlsPath, { name: 'webhook-urls.json' })
+    }
+
+    // Finalize the archive
+    await archive.finalize()
+
+    logger.info('Sessions backup downloaded successfully')
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to create sessions backup')
+    if (!res.headersSent) {
+      sendErrorResponse(res, 500, error.message)
+    }
+  }
+}
+
 module.exports = {
   startSession,
   stopSession,
@@ -515,5 +588,6 @@ module.exports = {
   terminateAllSessions,
   getSessions,
   getPageScreenshot,
-  getWebhookDebugInfo
+  getWebhookDebugInfo,
+  downloadSessionsBackup
 }

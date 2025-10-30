@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Activity, Terminal, Settings as SettingsIcon, Users, Edit, Cpu, HardDrive, Loader, Eye, EyeOff, Key } from 'lucide-react'
@@ -8,12 +8,15 @@ import toast from 'react-hot-toast'
 import SessionManagement from '../components/SessionManagement'
 import EditInstanceModal from '../components/EditInstanceModal'
 
-export default function InstanceDetails() {
+export default function InstanceDetails({ user }) {
   const { id } = useParams()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('metrics')
   const [showEditModal, setShowEditModal] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
+  const [showImageUpdateModal, setShowImageUpdateModal] = useState(false)
+
+  const [logs, setLogs] = useState('')
 
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 Bytes'
@@ -22,6 +25,8 @@ export default function InstanceDetails() {
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
+
+
 
   const { data: instance, isLoading, error } = useQuery({
     queryKey: ['instances', id],
@@ -36,12 +41,11 @@ export default function InstanceDetails() {
     enabled: activeTab === 'metrics',
   })
 
-  // Fetch resource usage for metrics tab
+  // Fetch resource usage for instance header
   const { data: resourcesData, isLoading: resourcesLoading } = useQuery({
     queryKey: ['resources', id],
     queryFn: () => instancesAPI.getResources(id),
     refetchInterval: 5000,
-    enabled: activeTab === 'metrics',
   })
 
   const { data: logsData, error: logsError } = useQuery({
@@ -50,6 +54,17 @@ export default function InstanceDetails() {
     refetchInterval: 5000,
     enabled: activeTab === 'logs',
   })
+
+  // Update logs state when data changes
+  useEffect(() => {
+    if (logsData?.logs) {
+      setLogs(logsData.logs)
+    }
+  }, [logsData])
+
+  const handleClearLogs = () => {
+    setLogs('')
+  }
 
   if (isLoading) {
     return (
@@ -113,13 +128,21 @@ export default function InstanceDetails() {
               <Edit className="w-4 h-4" />
               Edit Instance
             </button>
+
             <div className="flex flex-col gap-2">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${instance.status === 'running'
-                ? 'bg-green-100 text-green-700'
-                : 'bg-gray-100 text-gray-700'
-                }`}>
-                {instance.status}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${instance.status === 'running'
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-gray-100 text-gray-700'
+                  }`}>
+                  {instance.status}
+                </span>
+                {instance.status === 'running' && resourcesData && (
+                  <span className="text-xs text-gray-600">
+                    Memory: {formatBytes(resourcesData.memoryUsed || 0)}
+                  </span>
+                )}
+              </div>
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${instance.session_status === 'connected'
                 ? 'bg-blue-100 text-blue-700'
                 : 'bg-yellow-100 text-yellow-700'
@@ -132,13 +155,32 @@ export default function InstanceDetails() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
           <div>
-            <p className="text-sm text-gray-600">Port</p>
-            <p className="text-lg font-semibold">{instance.port}</p>
+            <p className="text-sm text-gray-600">Instance</p>
+            <p className="text-lg font-semibold">3.140.52.120:{instance.port}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600">Container ID</p>
             <p className="text-lg font-semibold font-mono text-sm">
               {instance.container_id ? instance.container_id.substring(0, 12) : 'N/A'}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">Docker Image</p>
+            <p className="text-lg font-semibold font-mono text-sm" title={instance.container_info?.image || 'N/A'}>
+              {instance.container_info?.image ? 
+                (instance.container_info.image.length > 20 ? 
+                  `${instance.container_info.image.substring(0, 20)}...` : 
+                  instance.container_info.image
+                ) : 'N/A'
+              }
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">Image ID</p>
+            <p className="text-lg font-semibold font-mono text-sm" title={instance.container_info?.image_id || 'N/A'}>
+              {instance.container_info?.image_id ? 
+                `${instance.container_info.image_id.substring(0, 12)}...` : 'N/A'
+              }
             </p>
           </div>
           <div>
@@ -192,60 +234,6 @@ export default function InstanceDetails() {
 
       {activeTab === 'metrics' && (
         <div className="space-y-6">
-          {/* Current Resource Usage */}
-          <div className="card">
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <Cpu className="w-5 h-5" />
-              Current Resource Usage
-            </h3>
-
-            {resourcesLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader className="w-6 h-6 animate-spin text-blue-500" />
-                <span className="ml-2">Loading resource usage...</span>
-              </div>
-            ) : resourcesData ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-blue-50 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Cpu className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-800">CPU Usage</span>
-                  </div>
-                  <div className="text-2xl font-bold text-blue-900">
-                    {resourcesData.cpu || 0}%
-                  </div>
-                </div>
-
-                <div className="bg-green-50 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <HardDrive className="w-4 h-4 text-green-600" />
-                    <span className="text-sm font-medium text-green-800">Memory Usage</span>
-                  </div>
-                  <div className="text-2xl font-bold text-green-900">
-                    {resourcesData.memory || 0}%
-                  </div>
-                  <div className="text-sm text-green-700">
-                    {formatBytes(resourcesData.memoryUsed || 0)} / {formatBytes(resourcesData.memoryLimit || 0)}
-                  </div>
-                </div>
-
-                <div className="bg-purple-50 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Users className="w-4 h-4 text-purple-600" />
-                    <span className="text-sm font-medium text-purple-800">Container Status</span>
-                  </div>
-                  <div className="text-lg font-bold text-purple-900">
-                    {instance.status}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                No resource data available
-              </div>
-            )}
-          </div>
-
           {/* Historical Metrics */}
           <div className="card">
             <h2 className="text-xl font-semibold mb-6">Historical Metrics (Last Hour)</h2>
@@ -293,12 +281,20 @@ export default function InstanceDetails() {
 
       {activeTab === 'logs' && (
         <div className="card">
-          <h2 className="text-xl font-semibold mb-4">Container Logs</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Container Logs</h2>
+            <button
+              onClick={handleClearLogs}
+              className="btn btn-secondary text-sm"
+            >
+              Clear Logs
+            </button>
+          </div>
           <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-sm overflow-x-auto max-h-[500px] overflow-y-auto">
             {logsError ? (
               <p className="text-red-400">Error loading logs: {logsError.message}</p>
-            ) : logsData?.logs ? (
-              <pre className="whitespace-pre-wrap">{logsData.logs}</pre>
+            ) : logs ? (
+              <pre className="whitespace-pre-wrap">{logs}</pre>
             ) : (
               <p className="text-gray-400">No logs available</p>
             )}
@@ -308,6 +304,75 @@ export default function InstanceDetails() {
 
       {activeTab === 'config' && (
         <div className="space-y-6">
+          {/* Container Information Section */}
+          {instance.container_info && (
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Container Information</h3>
+                {user?.role === 'admin' && (
+                  <button
+                    onClick={() => setShowImageUpdateModal(true)}
+                    className="btn btn-secondary text-sm"
+                  >
+                    Update Image
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">Docker Image</h4>
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-xs text-gray-500">Image Name</p>
+                      <p className="font-mono text-sm bg-gray-50 rounded px-2 py-1 break-all">
+                        {instance.container_info.image}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Image ID</p>
+                      <p className="font-mono text-sm bg-gray-50 rounded px-2 py-1">
+                        {instance.container_info.image_id}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Platform</p>
+                      <p className="font-mono text-sm bg-gray-50 rounded px-2 py-1">
+                        {instance.container_info.platform}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">Build Information</h4>
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-xs text-gray-500">Version</p>
+                      <p className="font-mono text-sm bg-gray-50 rounded px-2 py-1">
+                        {instance.container_info.build_info?.version || 'Unknown'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Git Revision</p>
+                      <p className="font-mono text-sm bg-gray-50 rounded px-2 py-1">
+                        {instance.container_info.build_info?.revision || 'Unknown'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Build Date</p>
+                      <p className="font-mono text-sm bg-gray-50 rounded px-2 py-1">
+                        {instance.container_info.build_info?.build_date !== 'Unknown' ? 
+                          new Date(instance.container_info.build_info.build_date).toLocaleString() :
+                          'Unknown'
+                        }
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* API Key Section */}
           <div className="card">
             <div className="flex items-center justify-between mb-4">
@@ -381,7 +446,7 @@ export default function InstanceDetails() {
 
           {/* Configuration Section */}
           <div className="card">
-            <h2 className="text-xl font-semibold mb-4">Configuration</h2>
+            <h2 className="text-xl font-semibold mb-4">Environment Configuration</h2>
             <div className="space-y-4">
               {Object.entries(instance.config).map(([key, value]) => (
                 <div key={key} className="border-b border-gray-200 pb-3">
@@ -400,10 +465,138 @@ export default function InstanceDetails() {
       {showEditModal && (
         <EditInstanceModal
           instance={instance}
+          user={user}
           onClose={() => setShowEditModal(false)}
           onSuccess={() => setShowEditModal(false)}
         />
       )}
+
+      {/* Image Update Modal */}
+      {showImageUpdateModal && (
+        <ImageUpdateModal
+          instance={instance}
+          onClose={() => setShowImageUpdateModal(false)}
+          onSuccess={() => setShowImageUpdateModal(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// Image Update Modal Component
+function ImageUpdateModal({ instance, onClose, onSuccess }) {
+  const [image, setImage] = useState(instance.container_info?.image || 'wwebjs-api:latest')
+  const [isLoading, setIsLoading] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setIsLoading(true)
+
+    try {
+      const response = await instancesAPI.updateImage(instance.id, { image })
+      toast.success(response.message || 'Image updated successfully')
+      onSuccess()
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to update image')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const commonImages = [
+    'wwebjs-api:latest',
+    'wwebjs-api:dev',
+    'wwebjs-api:v1.1-message-status',
+    'wwebjs-api:stable'
+  ]
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <h2 className="text-xl font-semibold mb-4">Update Docker Image</h2>
+        
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Docker Image
+            </label>
+            <input
+              type="text"
+              value={image}
+              onChange={(e) => setImage(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+              placeholder="e.g., wwebjs-api:latest"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Current: {instance.container_info?.image || 'Unknown'}
+            </p>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Common Images
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {commonImages.map((img) => (
+                <button
+                  key={img}
+                  type="button"
+                  onClick={() => setImage(img)}
+                  className={`text-xs px-2 py-1 rounded border ${
+                    image === img 
+                      ? 'bg-primary-100 border-primary-300 text-primary-700'
+                      : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {img}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-yellow-800">
+                  Important: Session Preservation
+                </h3>
+                <div className="mt-2 text-sm text-yellow-700">
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>This will stop and recreate the container with the new image</li>
+                    <li>WhatsApp sessions are preserved via volume mounting</li>
+                    <li>There will be a brief downtime during the update</li>
+                    <li>Backup your sessions before major updates (recommended)</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+              disabled={isLoading}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+              disabled={isLoading}
+            >
+              {isLoading ? 'Updating...' : 'Update Image'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
