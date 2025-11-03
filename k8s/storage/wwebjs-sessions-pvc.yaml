@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wwebjs-sessions-pvc
+  namespace: wwebjs-orchestrator
+  labels:
+    app.kubernetes.io/name: wwebjs-orchestrator
+    app.kubernetes.io/component: wwebjs-sessions
+spec:
+  accessModes:
+    - ReadWriteMany  # Multiple pods need access to sessions
+  resources:
+    requests:
+      storage: 50Gi
+  # Use a storage class that supports ReadWriteMany (e.g., NFS, EFS, etc.)
+  # storageClassName: nfs-client

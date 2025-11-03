@@ -52,9 +52,15 @@ async function start() {
     await initDatabase();
     logger.info('Database initialized');
 
-    // Initialize Docker connection
-    await initDocker();
-    logger.info('Docker connection established');
+    // Initialize container orchestration (Docker or Kubernetes)
+    if (process.env.KUBERNETES_MODE === 'true') {
+      const { initKubernetes } = require('./kubernetes');
+      await initKubernetes();
+      logger.info('Kubernetes client initialized');
+    } else {
+      await initDocker();
+      logger.info('Docker connection established');
+    }
 
     // Start HTTP server
     const server = app.listen(PORT, () => {

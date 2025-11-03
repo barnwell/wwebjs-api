@@ -1,12 +1,16 @@
 const express = require('express');
 const authRoutes = require('./auth');
 const userRoutes = require('./users');
-const instanceRoutes = require('./instances');
 const templateRoutes = require('./templates');
 const metricsRoutes = require('./metrics');
 const settingsRoutes = require('./settings');
 
 const router = express.Router();
+
+// Conditionally load instance routes based on orchestration mode
+const instanceRoutes = process.env.KUBERNETES_MODE === 'true' 
+  ? require('./instances-k8s')
+  : require('./instances');
 
 // Public routes (no auth required)
 router.use('/auth', authRoutes);

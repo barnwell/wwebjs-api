@@ -44,14 +44,15 @@ async function createTables() {
       )
     `);
 
-    // Instances table (updated with user_id)
+    // Instances table (updated with user_id and Kubernetes support)
     await client.query(`
       CREATE TABLE IF NOT EXISTS instances (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         description TEXT,
-        port INTEGER UNIQUE NOT NULL,
+        port INTEGER,
         container_id TEXT,
+        deployment_name TEXT,
         status TEXT DEFAULT 'stopped',
         session_status TEXT DEFAULT 'disconnected',
         config TEXT NOT NULL,
@@ -64,6 +65,20 @@ async function createTables() {
         UNIQUE(name, user_id)
       )
     `);
+
+    // Add deployment_name column if it doesn't exist (migration)
+    await client.query(`
+      ALTER TABLE instances 
+      ADD COLUMN IF NOT EXISTS deployment_name TEXT
+    `);
+
+    // Remove unique constraint on port for Kubernetes mode
+    if (process.env.KUBERNETES_MODE === 'true') {
+      await client.query(`
+        ALTER TABLE instances 
+        ALTER COLUMN port DROP NOT NULL
+      `);
+    }
 
     // Templates table (updated with user_id)
     await client.query(`

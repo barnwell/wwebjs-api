@@ -1,0 +1,22 @@
+apiVersion: v2
+name: wwebjs-orchestrator
+description: A Helm chart for WWebJS Orchestrator on Kubernetes
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - whatsapp
+  - orchestrator
+  - wwebjs
+  - automation
+home: https://github.com/TrueSelph/ts-whatsapp
+sources:
+  - https://github.com/TrueSelph/ts-whatsapp
+maintainers:
+  - name: Jason Barnwell
+    email: jason.barnwell@v75inc.com
+dependencies:
+  - name: postgresql
+    version: "12.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled

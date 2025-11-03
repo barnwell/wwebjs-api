@@ -1,0 +1,149 @@
+# Default values for wwebjs-orchestrator
+replicaCount:
+  backend: 2
+  frontend: 3
+
+image:
+  backend:
+    repository: ghcr.io/your-org/wwebjs-orchestrator/orchestrator-backend
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  frontend:
+    repository: ghcr.io/your-org/wwebjs-orchestrator/orchestrator-frontend
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  wwebjs:
+    repository: ghcr.io/your-org/wwebjs-orchestrator/wwebjs-api
+    pullPolicy: IfNotPresent
+    tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1001
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1001
+
+service:
+  backend:
+    type: ClusterIP
+    port: 5000
+  frontend:
+    type: ClusterIP
+    port: 80
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+  hosts:
+    - host: wwebjs-orchestrator.yourdomain.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: backend
+        - path: /
+          pathType: Prefix
+          service: frontend
+  tls:
+    - secretName: orchestrator-tls
+      hosts:
+        - wwebjs-orchestrator.yourdomain.com
+
+resources:
+  backend:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  frontend:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+autoscaling:
+  backend:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  frontend:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# PostgreSQL configuration
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "orchestrator123"
+    username: "orchestrator"
+    password: "orchestrator123"
+    database: "orchestrator"
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+  metrics:
+    enabled: true
+
+# Persistent storage for wwebjs sessions
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteMany
+  size: 50Gi
+
+# Configuration
+config:
+  backend:
+    nodeEnv: production
+    enableMetrics: true
+    metricsInterval: 5000
+    kubernetesMode: true
+    wwebjsPortRangeStart: 3000
+    wwebjsPortRangeEnd: 3100
+
+# Monitoring
+monitoring:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+    namespace: monitoring
+    interval: 30s
+
+# Network policies
+networkPolicy:
+  enabled: false
