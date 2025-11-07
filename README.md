@@ -1,10 +1,10 @@
-# WWebJS Orchestrator
+# TS WhatsApp
 
-A powerful orchestration platform for managing multiple wwebjs-api instances with different configurations. Built with Node.js, React, and Docker.
+A powerful orchestration platform for managing multiple [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js) instances with different configurations. Built with Node.js, React, and Docker.
 
 ## Features
 
-- 🚀 **Instance Management**: Create, start, stop, restart, and delete wwebjs-api instances
+- 🚀 **Instance Management**: Create, start, stop, restart, and delete wwebjs instances
 - 📊 **Real-time Monitoring**: CPU, memory, and network usage metrics
 - 🔧 **Configuration Templates**: Reusable configuration templates for quick instance creation
 - 📱 **QR Code Scanner**: View and scan WhatsApp QR codes directly from the dashboard
@@ -46,7 +46,7 @@ A powerful orchestration platform for managing multiple wwebjs-api instances wit
 
 - Docker and Docker Compose installed
 - Node.js 18+ (for local development)
-- Built wwebjs-api Docker image (see [Building wwebjs-api](#building-wwebjs-api))
+- Built wwebjs-api Docker image
 
 ## Quick Start
 
@@ -59,21 +59,13 @@ cd ../wwebjs-api
 docker build -t wwebjs-api:latest .
 ```
 
-### 2. Setup Portainer (Optional but Recommended)
-
-```bash
-npm run docker:portainer
-```
-
-Access Portainer at http://localhost:9000 and create an admin account.
-
-### 3. Create Docker Network
+### 2. Create Docker Network
 
 ```bash
 docker network create wwebjs-network
 ```
 
-### 4. Configure Environment
+### 3. Configure Environment
 
 Copy the example environment file and customize it:
 
@@ -91,7 +83,7 @@ DOCKER_SOCKET=/var/run/docker.sock
 WWEBJS_IMAGE=wwebjs-api:latest
 ```
 
-### 5. Start the Orchestrator
+### 4. Start the Orchestrator
 
 **Option A: Using Docker Compose (Production)**
 
@@ -109,11 +101,10 @@ npm run setup
 npm run dev
 ```
 
-### 6. Access the Dashboard
+### 5. Access the Dashboard
 
-- **Dashboard**: http://localhost:3001
-- **Backend API**: http://localhost:5000
-- **Portainer** (if installed): http://localhost:9000
+- **Dashboard**: http://localhost:13001
+- **Backend API**: http://localhost:15000
 
 ## Usage
 
@@ -196,18 +187,18 @@ The dashboard provides real-time monitoring:
 
 ### Backend Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | 5000 | Backend server port |
-| `NODE_ENV` | development | Environment mode |
+| Variable | Default                | Description |
+|----------|------------------------|-------------|
+| `PORT` | 15000                  | Backend server port |
+| `NODE_ENV` | development            | Environment mode |
 | `DATABASE_PATH` | ./data/orchestrator.db | SQLite database path |
-| `DOCKER_SOCKET` | /var/run/docker.sock | Docker socket path |
-| `WWEBJS_IMAGE` | wwebjs-api:latest | wwebjs-api Docker image |
-| `WWEBJS_PORT_RANGE_START` | 3000 | Starting port for instances |
-| `WWEBJS_PORT_RANGE_END` | 3100 | Ending port for instances |
-| `DOCKER_NETWORK` | wwebjs-network | Docker network name |
-| `ENABLE_METRICS` | true | Enable metrics collection |
-| `METRICS_INTERVAL` | 5000 | Metrics collection interval (ms) |
+| `DOCKER_SOCKET` | /var/run/docker.sock   | Docker socket path |
+| `WWEBJS_IMAGE` | wwebjs-api:latest      | wwebjs-api Docker image |
+| `WWEBJS_PORT_RANGE_START` | 3000                   | Starting port for instances |
+| `WWEBJS_PORT_RANGE_END` | 3100                   | Ending port for instances |
+| `DOCKER_NETWORK` | wwebjs-network         | Docker network name |
+| `ENABLE_METRICS` | true                   | Enable metrics collection |
+| `METRICS_INTERVAL` | 5000                   | Metrics collection interval (ms) |
 
 ### wwebjs-api Instance Configuration
 
@@ -325,19 +316,3 @@ For issues and questions:
 - Create an issue on GitHub
 - Check existing documentation
 - Review logs in the dashboard
-
-## Roadmap
-
-- [ ] Multi-server support (manage instances across multiple Docker hosts)
-- [ ] Backup and restore functionality
-- [ ] Auto-scaling based on metrics
-- [ ] Advanced monitoring and alerting
-- [ ] API rate limiting per instance
-- [ ] User authentication and role-based access
-- [ ] Integration with cloud providers
-- [ ] Kubernetes support
-
----
-
-Made with ❤️ for the WhatsApp automation community
-
