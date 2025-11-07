@@ -19,7 +19,8 @@
     "vite": "^5.0.10",
     "tailwindcss": "^3.4.0",
     "autoprefixer": "^10.4.16",
-    "postcss": "^8.4.32"
+    "postcss": "^8.4.32",
+    "patch-package": "^8.0.0"
   },
   "scripts": {
     "dev": "vite",
