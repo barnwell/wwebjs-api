@@ -181,7 +181,15 @@ const setupSession = async (sessionId, customWebhookUrl = null) => {
           '--use-mock-keychain',
           '--disable-setuid-sandbox',
           '--no-sandbox',
-          '--disable-blink-features=AutomationControlled'
+          '--disable-blink-features=AutomationControlled',
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--disable-features=VizDisplayCompositor',
+          '--single-process',
+          '--renderer-process-limit=1',
+          '--force-color-profile=srgb',
+          '--no-crash-upload',
+          '--disable-software-rasterizer'
         ]
       },
       authStrategy: localAuth,
