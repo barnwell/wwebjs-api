@@ -181,6 +181,54 @@ ws.on('message', (data) => {
 - Set the `API_KEY` environment variable to protect the REST endpoints
 - Run periodically the `/api/terminateInactiveSessions` endpoint to prevent useless sessions to take up space and resources(only in case you are not in control of the sessions)
 
+## Deploy to Vercel
+
+This project can be deployed to Vercel using optimized Puppeteer packages for serverless environments.
+
+> **⚠️ Important Limitations:**
+> - Vercel Functions are stateless. Session data stored in `/tmp` will be lost between cold starts
+> - For production use, implement persistent storage (S3, Cloud Storage, etc.) for session files
+> - Each cold start requires re-authentication with WhatsApp
+> - Function timeout limited to 60 seconds (Pro plan) or 10 seconds (Hobby plan)
+
+### Prerequisites
+
+- A Vercel account
+- Your repository pushed to GitHub, GitLab, or Bitbucket
+- Vercel CLI installed (optional): `npm i -g vercel`
+
+### Deployment Steps
+
+1. **Connect your repository to Vercel:**
+   - Visit [vercel.com](https://vercel.com) and import your repository
+   - Or use CLI: `vercel --prod`
+
+2. **Configure Environment Variables** in the Vercel dashboard:
+   ```
+   API_KEY=your_api_key_here
+   BASE_WEBHOOK_URL=https://your-webhook-url.com/webhook
+   ENABLE_LOCAL_CALLBACK_EXAMPLE=FALSE
+   HEADLESS=TRUE
+   RECOVER_SESSIONS=FALSE
+   AUTO_START_SESSIONS=FALSE
+   ```
+
+3. **Deploy:**
+   - Vercel will automatically build and deploy your application
+   - The postinstall script will create the Chromium package during build
+
+4. **Test the deployment:**
+   - Visit `https://your-app.vercel.app/session/start/TEST`
+   - Check function logs for any errors
+
+### Vercel-Specific Notes
+
+- The app automatically detects Vercel environment and uses `puppeteer-core` with `@sparticuz/chromium-min`
+- Chromium binary is downloaded from `/public/chromium-pack.tar` hosted on your deployment
+- Executable path is cached to improve warm start performance
+- Session path is automatically set to `/tmp/sessions` on Vercel
+
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.

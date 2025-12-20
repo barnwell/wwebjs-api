@@ -1,0 +1,15 @@
+{
+    "version": 2,
+    "functions": {
+        "server.js": {
+            "memory": 3008,
+            "maxDuration": 60
+        }
+    },
+    "buildCommand": "npm install",
+    "env": {
+        "SESSIONS_PATH": "/tmp/sessions",
+        "HEADLESS": "true",
+        "RECOVER_SESSIONS": "false"
+    }
+}

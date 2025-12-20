@@ -2,7 +2,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js')
 const fs = require('fs')
 const path = require('path')
 const sessions = new Map()
-const { baseWebhookURL, sessionFolderPath, maxAttachmentSize, setMessagesAsSeen, webVersion, webVersionCacheType, recoverSessions, chromeBin, headless, releaseBrowserLock } = require('./config')
+const { baseWebhookURL, sessionFolderPath, maxAttachmentSize, setMessagesAsSeen, webVersion, webVersionCacheType, recoverSessions, chromeBin, headless, releaseBrowserLock, isVercel } = require('./config')
 const { triggerWebhook, waitForNestedObject, isEventEnabled, sendMessageSeenStatus, sleep, patchWWebLibrary } = require('./utils')
 const { logger } = require('./logger')
 const { initWebSocketServer, terminateWebSocketServer, triggerWebSocket } = require('./websocket')
@@ -96,51 +96,85 @@ const setupSession = async (sessionId) => {
     delete localAuth.logout
     localAuth.logout = () => { }
 
+    // Configure Puppeteer based on environment
+    let puppeteerConfig = {
+      executablePath: chromeBin,
+      headless,
+      args: [
+        '--autoplay-policy=user-gesture-required',
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-breakpad',
+        '--disable-client-side-phishing-detection',
+        '--disable-component-update',
+        '--disable-default-apps',
+        '--disable-dev-shm-usage',
+        '--disable-domain-reliability',
+        '--disable-extensions',
+        '--disable-features=AudioServiceOutOfProcess',
+        '--disable-hang-monitor',
+        '--disable-ipc-flooding-protection',
+        '--disable-notifications',
+        '--disable-offer-store-unmasked-wallet-cards',
+        '--disable-popup-blocking',
+        '--disable-print-preview',
+        '--disable-prompt-on-repost',
+        '--disable-renderer-backgrounding',
+        '--disable-speech-api',
+        '--disable-sync',
+        '--disable-gpu',
+        '--disable-accelerated-2d-canvas',
+        '--hide-scrollbars',
+        '--ignore-gpu-blacklist',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--no-default-browser-check',
+        '--no-first-run',
+        '--no-pings',
+        '--no-zygote',
+        '--password-store=basic',
+        '--use-gl=swiftshader',
+        '--use-mock-keychain',
+        '--disable-setuid-sandbox',
+        '--no-sandbox',
+        '--disable-blink-features=AutomationControlled'
+      ]
+    }
+
+    // Use Vercel-specific Puppeteer configuration if running on Vercel
+    if (isVercel) {
+      try {
+        logger.info({ sessionId }, 'Vercel environment detected, using puppeteer-core with chromium-min')
+        const chromium = require('@sparticuz/chromium-min')
+
+        // Cache for executable path to avoid re-downloading on warm starts
+        if (!setupSession.chromiumExecutablePath) {
+          // URL to the Chromium binary package hosted in /public
+          const chromiumPackUrl = process.env.VERCEL_URL
+            ? `https://${process.env.VERCEL_URL}/chromium-pack.tar`
+            : process.env.VERCEL_PROJECT_PRODUCTION_URL
+              ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/chromium-pack.tar`
+              : 'https://github.com/gabenunez/puppeteer-on-vercel/raw/refs/heads/main/example/chromium-dont-use-in-prod.tar'
+
+          logger.info({ sessionId, chromiumPackUrl }, 'Downloading Chromium binary')
+          setupSession.chromiumExecutablePath = await chromium.executablePath(chromiumPackUrl)
+          logger.info({ sessionId, path: setupSession.chromiumExecutablePath }, 'Chromium path resolved')
+        }
+
+        puppeteerConfig = {
+          executablePath: setupSession.chromiumExecutablePath,
+          headless: chromium.headless,
+          args: chromium.args
+        }
+      } catch (error) {
+        logger.error({ sessionId, err: error }, 'Failed to configure Vercel-specific Puppeteer')
+        throw new Error(`Vercel Puppeteer configuration failed: ${error.message}`)
+      }
+    }
+
     const clientOptions = {
-      puppeteer: {
-        executablePath: chromeBin,
-        headless,
-        args: [
-          '--autoplay-policy=user-gesture-required',
-          '--disable-background-networking',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-breakpad',
-          '--disable-client-side-phishing-detection',
-          '--disable-component-update',
-          '--disable-default-apps',
-          '--disable-dev-shm-usage',
-          '--disable-domain-reliability',
-          '--disable-extensions',
-          '--disable-features=AudioServiceOutOfProcess',
-          '--disable-hang-monitor',
-          '--disable-ipc-flooding-protection',
-          '--disable-notifications',
-          '--disable-offer-store-unmasked-wallet-cards',
-          '--disable-popup-blocking',
-          '--disable-print-preview',
-          '--disable-prompt-on-repost',
-          '--disable-renderer-backgrounding',
-          '--disable-speech-api',
-          '--disable-sync',
-          '--disable-gpu',
-          '--disable-accelerated-2d-canvas',
-          '--hide-scrollbars',
-          '--ignore-gpu-blacklist',
-          '--metrics-recording-only',
-          '--mute-audio',
-          '--no-default-browser-check',
-          '--no-first-run',
-          '--no-pings',
-          '--no-zygote',
-          '--password-store=basic',
-          '--use-gl=swiftshader',
-          '--use-mock-keychain',
-          '--disable-setuid-sandbox',
-          '--no-sandbox',
-          '--disable-blink-features=AutomationControlled'
-        ]
-      },
+      puppeteer: puppeteerConfig,
       authStrategy: localAuth
     }
 
@@ -326,7 +360,7 @@ const initializeEvents = (client, sessionId) => {
       triggerWebhook(sessionWebhook, sessionId, 'message', { message })
       triggerWebSocket(sessionId, 'message', { message })
       if (message.hasMedia && message._data?.size < maxAttachmentSize) {
-      // custom service event
+        // custom service event
         if (isEventEnabled('media')) {
           message.downloadMedia().then(messageMedia => {
             triggerWebhook(sessionWebhook, sessionId, 'media', { messageMedia, message })
