@@ -21,7 +21,7 @@
     "qr-image": "^3.2.0",
     "qrcode-terminal": "^0.12.0",
     "swagger-ui-express": "^5.0.1",
-    "whatsapp-web.js": "github:pedroslopez/whatsapp-web.js#5438c2042b9b42370c0acef21e511c08bb462983",
+    "whatsapp-web.js": "github:barnwell/whatsapp-web.js#c4d27ac4b8474c2a4083a8966e67c4b36b831179",
     "ws": "^8.18.3"
   },
   "devDependencies": {
