@@ -2,7 +2,7 @@ const qr = require('qr-image')
 const fs = require('fs')
 const path = require('path')
 const archiver = require('archiver')
-const { setupSession, deleteSession, reloadSession, validateSession, flushSessions, destroySession, sessions, sessionWebhookUrls } = require('../sessions')
+const { setupSession, deleteSession, reloadSession, validateSession, flushSessions, destroySession, sessions, sessionWebhookUrls, updateWebhookUrl } = require('../sessions')
 const { sendErrorResponse, waitForNestedObject, exposeFunctionIfAbsent, checkAvailableMemory } = require('../utils')
 const { logger } = require('../logger')
 const { sessionFolderPath } = require('../config')
@@ -23,7 +23,7 @@ const startSession = async (req, res) => {
   // #swagger.description = 'Starts a session for the given session ID.'
   const sessionId = req.params.sessionId
   const webhookUrl = req.body?.webhookUrl
-  
+
   // Validate webhook URL if provided
   if (webhookUrl) {
     try {
@@ -32,18 +32,18 @@ const startSession = async (req, res) => {
       return sendErrorResponse(res, 400, 'Invalid webhook URL format')
     }
   }
-  
+
   // Check available memory before creating session
   const memoryCheck = checkAvailableMemory()
   if (!memoryCheck.hasEnoughMemory) {
-    logger.warn({ 
-      sessionId, 
+    logger.warn({
+      sessionId,
       availableMemory: Math.round(memoryCheck.available),
-      minMemoryRequired: memoryCheck.minMemoryRequired 
+      minMemoryRequired: memoryCheck.minMemoryRequired
     }, 'Insufficient memory to create session')
     return sendErrorResponse(res, 507, `Insufficient memory. Available: ${Math.round(memoryCheck.available)}MB, Required: ${memoryCheck.minMemoryRequired}MB`)
   }
-  
+
   try {
     const setupSessionReturn = await setupSession(sessionId, webhookUrl)
     if (!setupSessionReturn.success) {
@@ -548,7 +548,7 @@ const downloadSessionsBackup = async (req, res) => {
       for (const file of files) {
         const filePath = path.join(sessionFolderPath, file)
         const stat = fs.statSync(filePath)
-        
+
         if (stat.isDirectory() && file.startsWith('session-')) {
           archive.directory(filePath, file)
         } else if (file === 'webhook-urls.json') {
@@ -575,6 +575,86 @@ const downloadSessionsBackup = async (req, res) => {
   }
 }
 
+/**
+ * Updates the webhook URL for an active session without restarting it.
+ *
+ * @function
+ * @async
+ * @param {Object} req - The HTTP request object.
+ * @param {Object} res - The HTTP response object.
+ * @param {string} req.params.sessionId - The session ID to update.
+ * @param {string} [req.body.webhookUrl] - The new webhook URL. Omit or set to null to reset to default.
+ * @returns {Promise<void>}
+ * @throws {Error} If there was an error updating the webhook URL.
+ */
+const updateWebhook = async (req, res) => {
+  /*
+    #swagger.summary = 'Update session webhook URL'
+    #swagger.description = 'Updates the webhook URL for an active session without restarting it. All future events will be sent to the new URL immediately. Omit webhookUrl or set to null to reset to the default webhook URL.'
+    #swagger.requestBody = {
+      required: true,
+      schema: {
+        type: 'object',
+        properties: {
+          webhookUrl: {
+            type: 'string',
+            description: 'The new webhook URL. Omit or set to null to reset to default.',
+            example: 'https://example.com/webhook'
+          }
+        }
+      },
+    }
+  */
+  const sessionId = req.params.sessionId
+  const { webhookUrl } = req.body || {}
+
+  // Validate webhook URL if provided
+  if (webhookUrl) {
+    try {
+      new URL(webhookUrl)
+    } catch (error) {
+      return sendErrorResponse(res, 400, 'Invalid webhook URL format')
+    }
+  }
+
+  try {
+    // Check if session exists
+    if (!sessions.has(sessionId)) {
+      /* #swagger.responses[404] = {
+        description: "Session not found.",
+        content: {
+          "application/json": {
+            schema: { "$ref": "#/definitions/ErrorResponse" }
+          }
+        }
+      }
+      */
+      return sendErrorResponse(res, 404, 'Session not found')
+    }
+
+    updateWebhookUrl(sessionId, webhookUrl || null)
+
+    const currentWebhook = sessionWebhookUrls.get(sessionId)
+    /* #swagger.responses[200] = {
+      description: "Webhook URL updated successfully.",
+      content: {
+        "application/json": {
+          schema: { "$ref": "#/definitions/UpdateWebhookResponse" }
+        }
+      }
+    }
+    */
+    res.json({
+      success: true,
+      message: webhookUrl ? 'Webhook URL updated successfully' : 'Webhook URL reset to default',
+      webhookUrl: currentWebhook || '(using default)'
+    })
+  } catch (error) {
+    logger.error({ sessionId, err: error }, 'Failed to update webhook URL')
+    sendErrorResponse(res, 500, error.message)
+  }
+}
+
 module.exports = {
   startSession,
   stopSession,
@@ -589,5 +669,6 @@ module.exports = {
   getSessions,
   getPageScreenshot,
   getWebhookDebugInfo,
-  downloadSessionsBackup
+  downloadSessionsBackup,
+  updateWebhook
 }

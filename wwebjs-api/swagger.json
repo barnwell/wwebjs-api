@@ -157,8 +157,8 @@
         "tags": [
           "Session"
         ],
-        "summary": "Start new session with optional webhook URL",
-        "description": "Starts a session for the given session ID. Can include an optional custom webhook URL for this session.",
+        "summary": "Start new session",
+        "description": "Starts a session for the given session ID.",
         "parameters": [
           {
             "name": "sessionId",
@@ -171,24 +171,6 @@
             "example": "f8377d8d-a589-4242-9ba6-9486a04ef80c"
           }
         ],
-        "requestBody": {
-          "description": "Session configuration with optional webhook URL",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "webhookUrl": {
-                    "type": "string",
-                    "format": "uri",
-                    "description": "Custom webhook URL for this session (overrides BASE_WEBHOOK_URL)",
-                    "example": "https://your-endpoint.com/webhooks/whatsapp"
-                  }
-                }
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Status of the initiated session.",
@@ -232,7 +214,7 @@
           }
         },
         "security": [
-          { 
+          {
             "apiKeyAuth": []
           }
         ]
@@ -242,7 +224,7 @@
           "Session"
         ],
         "summary": "Start new session",
-        "description": "Starts a session for the given session ID using global webhook URL.",
+        "description": "Starts a session for the given session ID.",
         "parameters": [
           {
             "name": "sessionId",
@@ -935,6 +917,210 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/session/webhookDebug/{sessionId}": {
+      "get": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "Get webhook debug info",
+        "description": "Get webhook URL debug information for a session.",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique identifier for the session (alphanumeric and - allowed)",
+            "example": "f8377d8d-a589-4242-9ba6-9486a04ef80c"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/session/webhook/{sessionId}": {
+      "patch": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "Update session webhook URL",
+        "description": "Updates the webhook URL for an active session without restarting it. All future events will be sent to the new URL immediately. Omit webhookUrl or set to null to reset to the default webhook URL.",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique identifier for the session (alphanumeric and - allowed)",
+            "example": "f8377d8d-a589-4242-9ba6-9486a04ef80c"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook URL updated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateWebhookResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "webhookUrl": {
+                    "type": "string",
+                    "description": "The new webhook URL. Omit or set to null to reset to default.",
+                    "example": "https://example.com/webhook"
+                  }
+                }
+              }
+            },
+            "application/xml": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "webhookUrl": {
+                    "type": "string",
+                    "description": "The new webhook URL. Omit or set to null to reset to default.",
+                    "example": "https://example.com/webhook"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/backup": {
+      "get": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "Download sessions backup",
+        "description": "Downloads a ZIP backup of all session data.",
+        "responses": {
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenResponse"
                 }
               }
             }
@@ -15154,6 +15340,26 @@
         },
         "xml": {
           "name": "GetSessionsResponse"
+        }
+      },
+      "UpdateWebhookResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Webhook URL updated successfully"
+          },
+          "webhookUrl": {
+            "type": "string",
+            "example": "https://example.com/webhook"
+          }
+        },
+        "xml": {
+          "name": "UpdateWebhookResponse"
         }
       }
     },

@@ -263,16 +263,15 @@ const setupSession = async (sessionId, customWebhookUrl = null) => {
 }
 
 const initializeEvents = (client, sessionId) => {
-  // check if the session webhook is overridden (custom webhook URL takes priority)
-  const customWebhookUrl = sessionWebhookUrls.get(sessionId)
-  const sessionWebhook = customWebhookUrl || process.env[sessionId.toUpperCase() + '_WEBHOOK_URL'] || baseWebhookURL
+  // Dynamic webhook URL lookup - resolved at event trigger time so updates take effect immediately
+  const getSessionWebhook = () => sessionWebhookUrls.get(sessionId) || process.env[sessionId.toUpperCase() + '_WEBHOOK_URL'] || baseWebhookURL
 
   logger.info({
     sessionId,
-    customWebhookUrl,
+    customWebhookUrl: sessionWebhookUrls.get(sessionId),
     envWebhookUrl: process.env[sessionId.toUpperCase() + '_WEBHOOK_URL'],
     baseWebhookURL,
-    finalWebhookUrl: sessionWebhook
+    finalWebhookUrl: getSessionWebhook()
   }, 'Webhook URL configuration for session')
 
   if (recoverSessions) {
@@ -322,7 +321,7 @@ const initializeEvents = (client, sessionId) => {
 
   if (isEventEnabled('auth_failure')) {
     client.on('auth_failure', (msg) => {
-      triggerWebhook(sessionWebhook, sessionId, 'status', { msg })
+      triggerWebhook(getSessionWebhook(), sessionId, 'status', { msg })
       triggerWebSocket(sessionId, 'status', { msg })
     })
   }
@@ -330,77 +329,77 @@ const initializeEvents = (client, sessionId) => {
   client.on('authenticated', () => {
     client.qr = null
     if (isEventEnabled('authenticated')) {
-      triggerWebhook(sessionWebhook, sessionId, 'authenticated')
+      triggerWebhook(getSessionWebhook(), sessionId, 'authenticated')
       triggerWebSocket(sessionId, 'authenticated')
     }
   })
 
   if (isEventEnabled('call')) {
     client.on('call', (call) => {
-      triggerWebhook(sessionWebhook, sessionId, 'call', { call })
+      triggerWebhook(getSessionWebhook(), sessionId, 'call', { call })
       triggerWebSocket(sessionId, 'call', { call })
     })
   }
 
   if (isEventEnabled('change_state')) {
     client.on('change_state', state => {
-      triggerWebhook(sessionWebhook, sessionId, 'change_state', { state })
+      triggerWebhook(getSessionWebhook(), sessionId, 'change_state', { state })
       triggerWebSocket(sessionId, 'change_state', { state })
     })
   }
 
   if (isEventEnabled('disconnected')) {
     client.on('disconnected', (reason) => {
-      triggerWebhook(sessionWebhook, sessionId, 'disconnected', { reason })
+      triggerWebhook(getSessionWebhook(), sessionId, 'disconnected', { reason })
       triggerWebSocket(sessionId, 'disconnected', { reason })
     })
   }
 
   if (isEventEnabled('group_join')) {
     client.on('group_join', (notification) => {
-      triggerWebhook(sessionWebhook, sessionId, 'group_join', { notification })
+      triggerWebhook(getSessionWebhook(), sessionId, 'group_join', { notification })
       triggerWebSocket(sessionId, 'group_join', { notification })
     })
   }
 
   if (isEventEnabled('group_leave')) {
     client.on('group_leave', (notification) => {
-      triggerWebhook(sessionWebhook, sessionId, 'group_leave', { notification })
+      triggerWebhook(getSessionWebhook(), sessionId, 'group_leave', { notification })
       triggerWebSocket(sessionId, 'group_leave', { notification })
     })
   }
 
   if (isEventEnabled('group_admin_changed')) {
     client.on('group_admin_changed', (notification) => {
-      triggerWebhook(sessionWebhook, sessionId, 'group_admin_changed', { notification })
+      triggerWebhook(getSessionWebhook(), sessionId, 'group_admin_changed', { notification })
       triggerWebSocket(sessionId, 'group_admin_changed', { notification })
     })
   }
 
   if (isEventEnabled('group_membership_request')) {
     client.on('group_membership_request', (notification) => {
-      triggerWebhook(sessionWebhook, sessionId, 'group_membership_request', { notification })
+      triggerWebhook(getSessionWebhook(), sessionId, 'group_membership_request', { notification })
       triggerWebSocket(sessionId, 'group_membership_request', { notification })
     })
   }
 
   if (isEventEnabled('group_update')) {
     client.on('group_update', (notification) => {
-      triggerWebhook(sessionWebhook, sessionId, 'group_update', { notification })
+      triggerWebhook(getSessionWebhook(), sessionId, 'group_update', { notification })
       triggerWebSocket(sessionId, 'group_update', { notification })
     })
   }
 
   if (isEventEnabled('loading_screen')) {
     client.on('loading_screen', (percent, message) => {
-      triggerWebhook(sessionWebhook, sessionId, 'loading_screen', { percent, message })
+      triggerWebhook(getSessionWebhook(), sessionId, 'loading_screen', { percent, message })
       triggerWebSocket(sessionId, 'loading_screen', { percent, message })
     })
   }
 
   if (isEventEnabled('media_uploaded')) {
     client.on('media_uploaded', (message) => {
-      triggerWebhook(sessionWebhook, sessionId, 'media_uploaded', { message })
+      triggerWebhook(getSessionWebhook(), sessionId, 'media_uploaded', { message })
       triggerWebSocket(sessionId, 'media_uploaded', { message })
     })
   }
@@ -409,13 +408,13 @@ const initializeEvents = (client, sessionId) => {
     // Handle status messages separately from regular messages
     if (message.isStatus) {
       if (isEventEnabled('message_status')) {
-        triggerWebhook(sessionWebhook, sessionId, 'message_status', { message })
+        triggerWebhook(getSessionWebhook(), sessionId, 'message_status', { message })
         triggerWebSocket(sessionId, 'message_status', { message })
         // Handle media for status messages if they have media
         if (message.hasMedia && message._data?.size < maxAttachmentSize) {
           if (isEventEnabled('media')) {
             message.downloadMedia().then(messageMedia => {
-              triggerWebhook(sessionWebhook, sessionId, 'media', { messageMedia, message })
+              triggerWebhook(getSessionWebhook(), sessionId, 'media', { messageMedia, message })
               triggerWebSocket(sessionId, 'media', { messageMedia, message })
             }).catch(error => {
               logger.error({ sessionId, err: error }, 'Failed to download media for status message')
@@ -429,13 +428,13 @@ const initializeEvents = (client, sessionId) => {
 
     // Handle regular messages (isStatus = false)
     if (isEventEnabled('message')) {
-      triggerWebhook(sessionWebhook, sessionId, 'message', { message })
+      triggerWebhook(getSessionWebhook(), sessionId, 'message', { message })
       triggerWebSocket(sessionId, 'message', { message })
       if (message.hasMedia && message._data?.size < maxAttachmentSize) {
         // custom service event
         if (isEventEnabled('media')) {
           message.downloadMedia().then(messageMedia => {
-            triggerWebhook(sessionWebhook, sessionId, 'media', { messageMedia, message })
+            triggerWebhook(getSessionWebhook(), sessionId, 'media', { messageMedia, message })
             triggerWebSocket(sessionId, 'media', { messageMedia, message })
           }).catch(error => {
             logger.error({ sessionId, err: error }, 'Failed to download media')
@@ -452,49 +451,49 @@ const initializeEvents = (client, sessionId) => {
 
   if (isEventEnabled('message_ack')) {
     client.on('message_ack', (message, ack) => {
-      triggerWebhook(sessionWebhook, sessionId, 'message_ack', { message, ack })
+      triggerWebhook(getSessionWebhook(), sessionId, 'message_ack', { message, ack })
       triggerWebSocket(sessionId, 'message_ack', { message, ack })
     })
   }
 
   if (isEventEnabled('message_create')) {
     client.on('message_create', (message) => {
-      triggerWebhook(sessionWebhook, sessionId, 'message_create', { message })
+      triggerWebhook(getSessionWebhook(), sessionId, 'message_create', { message })
       triggerWebSocket(sessionId, 'message_create', { message })
     })
   }
 
   if (isEventEnabled('message_reaction')) {
     client.on('message_reaction', (reaction) => {
-      triggerWebhook(sessionWebhook, sessionId, 'message_reaction', { reaction })
+      triggerWebhook(getSessionWebhook(), sessionId, 'message_reaction', { reaction })
       triggerWebSocket(sessionId, 'message_reaction', { reaction })
     })
   }
 
   if (isEventEnabled('message_edit')) {
     client.on('message_edit', (message, newBody, prevBody) => {
-      triggerWebhook(sessionWebhook, sessionId, 'message_edit', { message, newBody, prevBody })
+      triggerWebhook(getSessionWebhook(), sessionId, 'message_edit', { message, newBody, prevBody })
       triggerWebSocket(sessionId, 'message_edit', { message, newBody, prevBody })
     })
   }
 
   if (isEventEnabled('message_ciphertext')) {
     client.on('message_ciphertext', (message) => {
-      triggerWebhook(sessionWebhook, sessionId, 'message_ciphertext', { message })
+      triggerWebhook(getSessionWebhook(), sessionId, 'message_ciphertext', { message })
       triggerWebSocket(sessionId, 'message_ciphertext', { message })
     })
   }
 
   if (isEventEnabled('message_revoke_everyone')) {
     client.on('message_revoke_everyone', (message) => {
-      triggerWebhook(sessionWebhook, sessionId, 'message_revoke_everyone', { message })
+      triggerWebhook(getSessionWebhook(), sessionId, 'message_revoke_everyone', { message })
       triggerWebSocket(sessionId, 'message_revoke_everyone', { message })
     })
   }
 
   if (isEventEnabled('message_revoke_me')) {
     client.on('message_revoke_me', (message, revokedMsg) => {
-      triggerWebhook(sessionWebhook, sessionId, 'message_revoke_me', { message, revokedMsg })
+      triggerWebhook(getSessionWebhook(), sessionId, 'message_revoke_me', { message, revokedMsg })
       triggerWebSocket(sessionId, 'message_revoke_me', { message, revokedMsg })
     })
   }
@@ -503,56 +502,56 @@ const initializeEvents = (client, sessionId) => {
     // inject qr code into session
     client.qr = qr
     if (isEventEnabled('qr')) {
-      triggerWebhook(sessionWebhook, sessionId, 'qr', { qr })
+      triggerWebhook(getSessionWebhook(), sessionId, 'qr', { qr })
       triggerWebSocket(sessionId, 'qr', { qr })
     }
   })
 
   if (isEventEnabled('ready')) {
     client.on('ready', () => {
-      triggerWebhook(sessionWebhook, sessionId, 'ready')
+      triggerWebhook(getSessionWebhook(), sessionId, 'ready')
       triggerWebSocket(sessionId, 'ready')
     })
   }
 
   if (isEventEnabled('contact_changed')) {
     client.on('contact_changed', (message, oldId, newId, isContact) => {
-      triggerWebhook(sessionWebhook, sessionId, 'contact_changed', { message, oldId, newId, isContact })
+      triggerWebhook(getSessionWebhook(), sessionId, 'contact_changed', { message, oldId, newId, isContact })
       triggerWebSocket(sessionId, 'contact_changed', { message, oldId, newId, isContact })
     })
   }
 
   if (isEventEnabled('chat_removed')) {
     client.on('chat_removed', (chat) => {
-      triggerWebhook(sessionWebhook, sessionId, 'chat_removed', { chat })
+      triggerWebhook(getSessionWebhook(), sessionId, 'chat_removed', { chat })
       triggerWebSocket(sessionId, 'chat_removed', { chat })
     })
   }
 
   if (isEventEnabled('chat_archived')) {
     client.on('chat_archived', (chat, currState, prevState) => {
-      triggerWebhook(sessionWebhook, sessionId, 'chat_archived', { chat, currState, prevState })
+      triggerWebhook(getSessionWebhook(), sessionId, 'chat_archived', { chat, currState, prevState })
       triggerWebSocket(sessionId, 'chat_archived', { chat, currState, prevState })
     })
   }
 
   if (isEventEnabled('unread_count')) {
     client.on('unread_count', (chat) => {
-      triggerWebhook(sessionWebhook, sessionId, 'unread_count', { chat })
+      triggerWebhook(getSessionWebhook(), sessionId, 'unread_count', { chat })
       triggerWebSocket(sessionId, 'unread_count', { chat })
     })
   }
 
   if (isEventEnabled('vote_update')) {
     client.on('vote_update', (vote) => {
-      triggerWebhook(sessionWebhook, sessionId, 'vote_update', { vote })
+      triggerWebhook(getSessionWebhook(), sessionId, 'vote_update', { vote })
       triggerWebSocket(sessionId, 'vote_update', { vote })
     })
   }
 
   if (isEventEnabled('code')) {
     client.on('code', (code) => {
-      triggerWebhook(sessionWebhook, sessionId, 'code', { code })
+      triggerWebhook(getSessionWebhook(), sessionId, 'code', { code })
       triggerWebSocket(sessionId, 'code', { code })
     })
   }
@@ -707,6 +706,17 @@ const flushSessions = async (deleteOnlyInactive) => {
   }
 }
 
+// Update webhook URL for an active session without restarting
+const updateWebhookUrl = (sessionId, webhookUrl) => {
+  if (webhookUrl) {
+    sessionWebhookUrls.set(sessionId, webhookUrl)
+  } else {
+    sessionWebhookUrls.delete(sessionId)
+  }
+  saveWebhookUrls()
+  logger.info({ sessionId, webhookUrl: webhookUrl || '(reset to default)' }, 'Webhook URL updated for session')
+}
+
 module.exports = {
   sessions,
   sessionWebhookUrls,
@@ -716,5 +726,6 @@ module.exports = {
   deleteSession,
   reloadSession,
   flushSessions,
-  destroySession
+  destroySession,
+  updateWebhookUrl
 }

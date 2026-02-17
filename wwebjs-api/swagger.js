@@ -80,6 +80,11 @@ const doc = {
     GetSessionsResponse: {
       success: true,
       result: ['session1', 'session2']
+    },
+    UpdateWebhookResponse: {
+      success: true,
+      message: 'Webhook URL updated successfully',
+      webhookUrl: 'https://example.com/webhook'
     }
   }
 }
